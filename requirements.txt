@@ -1,0 +1,32 @@
+# Core API (Phase 2+)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+
+# Database
+sqlalchemy>=2.0.36
+psycopg2-binary>=2.9.10
+alembic>=1.14.0
+
+# Validation & settings
+pydantic[email]>=2.10.0
+pydantic-settings>=2.6.0
+python-dotenv>=1.0.1
+
+# Auth (Phase 2)
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.2.0
+
+# Telegram bot (Phase 6)
+python-telegram-bot>=21.7
+
+# Reports & exports (Phase 8)
+openpyxl>=3.1.5
+reportlab>=4.2.5
+
+# HTTP client (SMS / external APIs)
+httpx>=0.28.0
+
+# Dev / test
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
