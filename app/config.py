@@ -26,4 +26,13 @@ class Settings(BaseSettings):
     ADMIN_PHONE: str = "0911000000"
 
 
+
+    # Email/SMTP settings
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = "noreply@kingscutaddis.com"
+    SMTP_FROM_NAME: str = "Kings Cut Addis"
+    
 settings = Settings()

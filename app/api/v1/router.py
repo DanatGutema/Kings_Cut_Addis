@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    analytics,
     auth,
     checkin,
     customer_visits,
@@ -11,6 +12,7 @@ from app.api.v1 import (
     rewards,
     services,
     visits,
+    staff
 )
 
 api_router = APIRouter()
@@ -25,4 +27,5 @@ api_router.include_router(rewards.router)
 api_router.include_router(rewards.loyalty_router)
 api_router.include_router(promotions.router)
 api_router.include_router(mini_app.router)
-
+api_router.include_router(analytics.router)
+api_router.include_router(staff.router)

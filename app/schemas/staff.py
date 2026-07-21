@@ -17,7 +17,7 @@ class StaffBase(BaseModel):
 
 
 class StaffCreate(StaffBase):
-    password: str = Field(..., min_length=8)
+    password: Optional[str] = Field(None, min_length=8)
 
 
 class StaffUpdate(BaseModel):
