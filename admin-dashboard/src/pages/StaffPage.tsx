@@ -1,7 +1,11 @@
 import { useState, useEffect } from "react";
+import { Navigate } from "react-router-dom";
 import { api, Staff } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 
 export default function StaffPage() {
+    const { staff: currentStaff } = useAuth();
+    if (currentStaff && currentStaff.role !== "admin") return <Navigate to="/" replace />;
     const [staffList, setStaffList] = useState<Staff[]>([]);
     const [loading, setLoading] = useState(true);
     const [showCreateForm, setShowCreateForm] = useState(false);
@@ -56,6 +60,34 @@ export default function StaffPage() {
             loadStaff();
         } catch (err: any) {
             setMessage(err.message || "Failed to deactivate staff");
+        }
+    }
+
+    async function handleActivate(staffId: string) {
+        try {
+            await api.activateStaff(staffId);
+            setMessage("Staff member activated");
+            loadStaff();
+        } catch (err: any) {
+            setMessage(err.message || "Failed to activate staff");
+        }
+    }
+
+    async function handleDelete(member: Staff) {
+        if (
+            !confirm(
+                `Permanently delete ${member.first_name} ${member.last_name || ""}? ` +
+                    "This only works if they have no visits, rewards, promotions, or audit history."
+            )
+        ) {
+            return;
+        }
+        try {
+            await api.deleteStaff(member.id);
+            setMessage("Staff member deleted");
+            loadStaff();
+        } catch (err: any) {
+            setMessage(err.message || "Failed to delete staff");
         }
     }
 
@@ -171,36 +203,53 @@ export default function StaffPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {staffList.map((staff) => (
-                                <tr key={staff.id}>
+                            {staffList.map((member) => (
+                                <tr key={member.id}>
                                     <td>
-                                        {staff.first_name} {staff.last_name}
+                                        {member.first_name} {member.last_name}
                                     </td>
-                                    <td>{staff.email}</td>
-                                    <td>{staff.phone_number}</td>
+                                    <td>{member.email}</td>
+                                    <td>{member.phone_number}</td>
                                     <td>
                                         <span
                                             className={
-                                                staff.role === "admin" ? "error-text" : "ok-text"
+                                                member.role === "admin" ? "error-text" : "ok-text"
                                             }
                                         >
-                                            {staff.role.toUpperCase()}
+                                            {member.role.toUpperCase()}
                                         </span>
                                     </td>
                                     <td>
-                                        <span className={staff.is_active ? "ok-text" : "error-text"}>
-                                            {staff.is_active ? "Active" : "Inactive"}
+                                        <span className={member.is_active ? "ok-text" : "error-text"}>
+                                            {member.is_active ? "Active" : "Inactive"}
                                         </span>
                                     </td>
                                     <td>
                                         <div className="row-actions">
-                                            {staff.is_active && (
+                                            {member.is_active ? (
                                                 <button
-                                                    className="ghost-btn"
-                                                    onClick={() => handleDeactivate(staff.id)}
+                                                    className="ghost-btn btn-danger"
+                                                    onClick={() => handleDeactivate(member.id)}
                                                 >
                                                     Deactivate
                                                 </button>
+                                            ) : (
+                                                <>
+                                                    <button
+                                                        className="ghost-btn btn-ok"
+                                                        onClick={() => handleActivate(member.id)}
+                                                    >
+                                                        Activate
+                                                    </button>
+                                                    {member.id !== currentStaff?.id && (
+                                                        <button
+                                                            className="ghost-btn btn-danger"
+                                                            onClick={() => handleDelete(member)}
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    )}
+                                                </>
                                             )}
                                         </div>
                                     </td>

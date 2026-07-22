@@ -25,7 +25,9 @@ export default function AppLayout() {
           <p className="brand-sub">Addis Admin</p>
         </div>
         <nav>
-          {links.map((link) => (
+          {links
+          .filter((link) => link.to !== "/staff" || staff?.role === "admin")
+          .map((link) => (
             <NavLink key={link.to} to={link.to} end={link.end} className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
               {link.label}
             </NavLink>

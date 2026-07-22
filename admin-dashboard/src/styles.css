@@ -289,6 +289,19 @@ button {
   color: var(--ok);
 }
 
+
+.btn-danger {
+  color: white;
+  border-color: var(--danger);
+  background-color: var(--danger);
+}
+
+.btn-ok {
+  color: white;
+  border-color: var(--ok);
+  background-color: var(--ok);
+}
+
 .login-page {
   min-height: 100dvh;
   display: grid;

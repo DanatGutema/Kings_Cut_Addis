@@ -311,6 +311,18 @@ export const api = {
       });
   },
 
+  async activateStaff(staffId: string): Promise<void> {
+      return request<void>(`/api/v1/staff/${staffId}/activate`, {
+          method: "POST",
+      });
+  },
+
+  async deleteStaff(staffId: string): Promise<void> {
+      return request<void>(`/api/v1/staff/${staffId}`, {
+          method: "DELETE",
+      });
+  },
+
   async setStaffPassword(token: string, password: string): Promise<void> {
       return request<void>("/api/v1/staff/set-password", {
           method: "POST",

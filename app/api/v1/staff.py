@@ -1,10 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException, status
 from datetime import datetime, timedelta
 import secrets
+from uuid import UUID
 
-from app.database import get_db
 from app.models.staff import Staff, StaffInvitation
+from app.models.visit import Visit
+from app.models.reward_history import RewardHistory
+from app.models.promotion import Promotion
+from app.models.audit_log import AuditLog
+from app.models.refresh_token import RefreshToken
+from app.models.system_setting import SystemSetting
 from app.schemas.staff import StaffCreate, StaffOut, StaffUpdate
 from app.api.deps import AdminStaff, DbSession
 from app.api.core.security import hash_password
@@ -23,7 +28,8 @@ def list_staff(
     _: AdminStaff,
 ):
     """List all staff members (admin only)."""
-    return db.query(Staff).filter(Staff.is_active == True).all()
+    # return db.query(Staff).filter(Staff.is_active == True).all()
+    return db.query(Staff).all()
 
 
 @router.post("/", response_model=StaffOut, status_code=status.HTTP_201_CREATED)
@@ -67,11 +73,19 @@ async def create_staff(
     db.refresh(new_staff)
     
     # Send invitation email
-    await send_staff_invitation(
-        email=new_staff.email,
-        first_name=new_staff.first_name,
-        token=token
-    )
+    # await send_staff_invitation(
+    #     email=new_staff.email,
+    #     first_name=new_staff.first_name,
+    #     token=token
+    # )
+    try:
+        await send_staff_invitation(
+            email=new_staff.email,
+            first_name=new_staff.first_name,
+            token=token
+        )
+    except Exception as e:
+        print(f"Warning: Failed to send invitation email: {e}")
     
     return new_staff
 
@@ -120,6 +134,107 @@ def deactivate_staff(
     db.commit()
     return {"message": "Staff deactivated successfully"}
 
+
+# to activate the staff back
+@router.post("/{staff_id}/activate")
+def activate_staff(
+    staff_id: str,
+    db: DbSession,
+    _: AdminStaff,
+):
+    """Activate a staff member (admin only)."""
+    staff = db.query(Staff).filter(Staff.id == staff_id).first()
+    if not staff:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Staff not found"
+        )
+
+    staff.is_active = True
+    db.commit()
+    return {"message": "Staff activated successfully"}
+
+
+@router.delete("/{staff_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_staff(
+    staff_id: str,
+    db: DbSession,
+    current_admin: AdminStaff,
+):
+    """Permanently delete a deactivated staff member with no related business data."""
+    try:
+        target_id = UUID(staff_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid staff id",
+        ) from exc
+
+    staff = db.query(Staff).filter(Staff.id == target_id).first()
+    if not staff:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Staff not found",
+        )
+
+    if staff.id == current_admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account",
+        )
+
+    if staff.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Deactivate the staff member before deleting",
+        )
+
+    if staff.role == "admin":
+        other_admins = (
+            db.query(Staff)
+            .filter(Staff.role == "admin", Staff.id != staff.id)
+            .count()
+        )
+        if other_admins == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete the last admin account",
+            )
+
+    blockers: list[str] = []
+    if db.query(Visit.id).filter(Visit.staff_id == staff.id).first():
+        blockers.append("visits")
+    if db.query(RewardHistory.id).filter(RewardHistory.staff_id == staff.id).first():
+        blockers.append("reward history")
+    if db.query(Promotion.id).filter(Promotion.created_by == staff.id).first():
+        blockers.append("promotions")
+    if db.query(AuditLog.id).filter(AuditLog.staff_id == staff.id).first():
+        blockers.append("audit logs")
+
+    if blockers:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Cannot delete this staff member because they have related "
+                f"{', '.join(blockers)}. Keep them deactivated instead."
+            ),
+        )
+
+    # Clear nullable references, then remove disposable rows
+    db.query(SystemSetting).filter(SystemSetting.updated_by == staff.id).update(
+        {SystemSetting.updated_by: None},
+        synchronize_session=False,
+    )
+    db.query(StaffInvitation).filter(StaffInvitation.staff_id == staff.id).delete(
+        synchronize_session=False
+    )
+    db.query(RefreshToken).filter(RefreshToken.staff_id == staff.id).delete(
+        synchronize_session=False
+    )
+
+    db.delete(staff)
+    db.commit()
+    return None
 
 
 class SetPasswordRequest(BaseModel):
