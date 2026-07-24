@@ -12,14 +12,37 @@ type Reward = {
   status: string;
 };
 
+type Customer = { 
+  id: string; 
+  first_name: string; 
+  last_name?: string | null; 
+  phone_number: string 
+};
+
 export default function RewardsPage() {
   const [rows, setRows] = useState<Reward[]>([]);
   const [status, setStatus] = useState("pending");
   const [error, setError] = useState<string | null>(null);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+
+  // async function load(nextStatus = status) {
+  //   const data = await api.rewards({ status: nextStatus || undefined });
+  //   setRows(data.items);
+  // }
+
+
+  const customerMap = Object.fromEntries(
+    customers.map((c) => [c.id, `${c.first_name} ${c.last_name || ""}`])
+  );
+
 
   async function load(nextStatus = status) {
-    const data = await api.rewards({ status: nextStatus || undefined });
-    setRows(data.items);
+    const [r, c] = await Promise.all([
+        api.rewards({ status: nextStatus || undefined }),
+        api.customers({ limit: 200 }),
+    ]);
+    setRows(r.items);
+    setCustomers(c.items);
   }
 
   useEffect(() => {
@@ -65,7 +88,8 @@ export default function RewardsPage() {
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
-                <td className="mono">{r.customer_id.slice(0, 8)}…</td>
+                {/* <td className="mono">{r.customer_id.slice(0, 8)}…</td> */}
+                <td>{customerMap[r.customer_id] || r.customer_id.slice(0, 8) + "…"}</td>
                 <td>
                   {r.reward_type}
                   {r.reward_percentage != null ? ` ${r.reward_percentage}%` : ""}

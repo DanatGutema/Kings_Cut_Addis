@@ -16,6 +16,7 @@ export default function CustomersPage() {
   const [rows, setRows] = useState<CustomerRow[]>([]);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
@@ -33,9 +34,18 @@ export default function CustomersPage() {
     void load();
   }, []);
 
+
+  useEffect(() => {
+    const t = setTimeout(() => void load(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+
+
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setMessage(null);
     try {
       await api.createCustomer({
         first_name: firstName.trim(),
@@ -45,9 +55,30 @@ export default function CustomersPage() {
       setFirstName("");
       setLastName("");
       setPhone("");
+      setMessage("Customer created");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
+    }
+  }
+
+  async function onDelete(customer: CustomerRow) {
+    if (
+      !confirm(
+        `Permanently delete ${customer.first_name} ${customer.last_name || ""}? ` +
+          "This only works if they have no visits, rewards, orders, or message history."
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    try {
+      await api.deleteCustomer(customer.id);
+      setMessage("Customer deleted");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
     }
   }
 
@@ -66,9 +97,9 @@ export default function CustomersPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button type="button" onClick={() => load(search)}>
+        {/* <button type="button" onClick={() => load(search)}>
           Search
-        </button>
+        </button> */}
       </div>
 
       <form className="panel form-grid compact" onSubmit={onCreate}>
@@ -82,6 +113,7 @@ export default function CustomersPage() {
       </form>
 
       {error && <p className="error-text">{error}</p>}
+      {message && <p className="ok-text">{message}</p>}
 
       <div className="table-wrap panel">
         <table>
@@ -93,6 +125,7 @@ export default function CustomersPage() {
               <th>Spending</th>
               <th>Tier</th>
               <th>Last visit</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -106,6 +139,17 @@ export default function CustomersPage() {
                 <td>{Number(c.total_spending).toLocaleString()}</td>
                 <td>{c.loyalty_status}</td>
                 <td>{c.last_visit_date || "—"}</td>
+                <td>
+                  <div className="row-actions">
+                    <button
+                      type="button"
+                      className="ghost-btn btn-danger"
+                      onClick={() => onDelete(c)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>

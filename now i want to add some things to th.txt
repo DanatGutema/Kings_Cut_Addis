@@ -1,0 +1,55 @@
+now i want to add some things to the servicesPage.tsx. so i want to  give this page access only for the admin or owner not for the staff. and there should be a button for deactivated services and deactivate button for active services(which is exsit) and also the deactivated service should have both activate and delete option and it will be deleted if only there is no related data for that services. if there is data the delete will not work. and i want it to have an edit button too and edit will update everything everyplace about that specific data. you got me?
+
+I'll review the services page and API so we can add admin-only access, activate/deactivate/delete, and edit with safe relation checks.
+
+Updating the services API for admin-only management (activate/deactivate/delete with relation checks), then building out the Services page with edit and access control.
+
+Fixing a hooks order issue: moving the admin redirect after all hooks.
+
+Done. Restart the API so the new service routes load.
+
+What you get
+Admin-only Services page + sidebar link (staff redirected away)
+Active: Edit + Deactivate
+Inactive: Edit + Activate + Delete
+Delete only if unused in visits/orders; otherwise blocked with a message
+Edit updates the service catalog (name, price, duration, description) for new visits and the services list
+Where it changed
+File	Change
+app/api/v1/services.py
+Admin-only create/update/activate/deactivate/delete; list still available to staff for Visits
+admin-dashboard/src/api/client.ts
+activateService, deleteService; deactivate now POST .../deactivate
+admin-dashboard/src/pages/ServicesPage.tsx
+Admin gate, edit form, activate/deactivate/delete actions
+admin-dashboard/src/layout/AppLayout.tsx
+Hide Services nav for non-admins
+Note on edit
+Editing updates the service catalog. Past visits keep their old snapshot prices (unit_price on visit lines) so history/revenue stays accurate. New visits use the updated price.
+
+
+
+
+
+
+I'll mirror the services pattern on loyalty rules: admin-only access, activate/deactivate/delete with relation checks, and edit.
+
+Loyalty rules now match the services pattern. Restart the API to load the new routes.
+
+Behavior
+Admin-only page + sidebar link
+Active: Edit + Deactivate
+Inactive: Edit + Activate + Delete
+Delete only if no rewards were issued from that rule
+Edit updates the rule in the DB (used by the loyalty engine for new evaluations)
+Where it changed
+File	Change
+app/api/v1/loyalty_rules.py
+Activate / deactivate endpoints; hard delete with reward check
+admin-dashboard/src/api/client.ts
+updateLoyaltyRule, activateLoyaltyRule, deactivateLoyaltyRule, deleteLoyaltyRule
+admin-dashboard/src/pages/LoyaltyPage.tsx
+Admin gate, edit form, action buttons
+admin-dashboard/src/layout/AppLayout.tsx
+Hide Loyalty nav for non-admins
+Existing rewards keep their stored amounts; only future reward issuance uses the updated rule.

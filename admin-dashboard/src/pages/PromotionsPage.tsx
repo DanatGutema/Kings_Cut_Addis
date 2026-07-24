@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 
 type Promo = {
   id: string;
@@ -12,18 +14,37 @@ type Promo = {
   is_active: boolean;
 };
 
+type PromoForm = {
+  title: string;
+  description: string;
+  discount_type: string;
+  discount_value: string;
+  start_date: string;
+  end_date: string;
+};
+
+function defaultDates(): Pick<PromoForm, "start_date" | "end_date"> {
+  return {
+    start_date: new Date().toISOString().slice(0, 10),
+    end_date: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+  };
+}
+
+const emptyForm = (): PromoForm => ({
+  title: "",
+  description: "",
+  discount_type: "percentage",
+  discount_value: "10",
+  ...defaultDates(),
+});
+
 export default function PromotionsPage() {
+  const { staff } = useAuth();
   const [rows, setRows] = useState<Promo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    title: "",
-    description: "",
-    discount_type: "percentage",
-    discount_value: "10",
-    start_date: new Date().toISOString().slice(0, 10),
-    end_date: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-  });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<PromoForm>(emptyForm);
 
   async function load() {
     const data = await api.promotions();
@@ -31,22 +52,124 @@ export default function PromotionsPage() {
   }
 
   useEffect(() => {
+    if (staff && staff.role !== "admin") return;
     load().catch((err) => setError(err instanceof Error ? err.message : "Load failed"));
-  }, []);
+  }, [staff]);
 
-  async function onCreate(e: FormEvent) {
+  if (staff && staff.role !== "admin") return <Navigate to="/" replace />;
+
+  function startEdit(promo: Promo) {
+    setEditingId(promo.id);
+    setForm({
+      title: promo.title,
+      description: promo.description || "",
+      discount_type: promo.discount_type,
+      discount_value: String(promo.discount_value),
+      start_date: promo.start_date.slice(0, 10),
+      end_date: promo.end_date.slice(0, 10),
+    });
+    setError(null);
+    setMessage(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setForm(emptyForm());
+  }
+
+  function buildPayload(isActive = true): Record<string, unknown> {
+    return {
+      title: form.title.trim(),
+      description: form.description.trim() || undefined,
+      discount_type: form.discount_type,
+      discount_value: Number(form.discount_value),
+      start_date: form.start_date,
+      end_date: form.end_date,
+      is_active: isActive,
+    };
+  }
+
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setMessage(null);
     try {
-      await api.createPromotion({
-        ...form,
-        discount_value: Number(form.discount_value),
-        is_active: true,
-      });
-      setForm((f) => ({ ...f, title: "", description: "" }));
+      if (editingId) {
+        const existing = rows.find((p) => p.id === editingId);
+        await api.updatePromotion(editingId, buildPayload(existing?.is_active ?? true));
+        setMessage("Promotion updated");
+        cancelEdit();
+      } else {
+        await api.createPromotion(buildPayload(true));
+        setMessage("Promotion created");
+        setForm(emptyForm());
+      }
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Create failed");
+      setError(err instanceof Error ? err.message : editingId ? "Update failed" : "Create failed");
+    }
+  }
+
+  async function onDeactivate(id: string) {
+    if (!confirm("Deactivate this promotion?")) return;
+    setError(null);
+    setMessage(null);
+    try {
+      await api.deactivatePromotion(id);
+      setMessage("Promotion deactivated");
+      if (editingId === id) cancelEdit();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Deactivate failed");
+    }
+  }
+
+  async function onActivate(id: string) {
+    setError(null);
+    setMessage(null);
+    try {
+      await api.activatePromotion(id);
+      setMessage("Promotion activated");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Activate failed");
+    }
+  }
+
+  async function onDelete(promo: Promo) {
+    if (
+      !confirm(
+        `Permanently delete "${promo.title}"? This only works if it was never broadcast to recipients.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    try {
+      await api.deletePromotion(promo.id);
+      setMessage("Promotion deleted");
+      if (editingId === promo.id) cancelEdit();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    }
+  }
+
+  async function onBroadcast(id: string) {
+    setError(null);
+    setMessage(null);
+    try {
+      const res = (await api.broadcastPromotion(id, {})) as {
+        telegram_sent: number;
+        telegram_failed: number;
+        recipients_total: number;
+      };
+      setMessage(
+        `Broadcast done: ${res.telegram_sent} sent / ${res.telegram_failed} failed of ${res.recipients_total}`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Broadcast failed");
     }
   }
 
@@ -55,12 +178,12 @@ export default function PromotionsPage() {
       <header className="page-head">
         <div>
           <h1>Promotions</h1>
-          <p className="muted">Create offers and broadcast via Telegram</p>
+          <p className="muted">Create offers and broadcast via Telegram (admin)</p>
         </div>
       </header>
 
-      <form className="panel form-grid" onSubmit={onCreate}>
-        <h2>New promotion</h2>
+      <form className="panel form-grid" onSubmit={onSubmit}>
+        <h2>{editingId ? "Edit promotion" : "New promotion"}</h2>
         <label>
           Title
           <input
@@ -115,7 +238,14 @@ export default function PromotionsPage() {
             />
           </label>
         </div>
-        <button type="submit">Create</button>
+        <div className="toolbar">
+          <button type="submit">{editingId ? "Save changes" : "Create"}</button>
+          {editingId && (
+            <button type="button" className="ghost-btn" onClick={cancelEdit}>
+              Cancel
+            </button>
+          )}
+        </div>
       </form>
 
       {error && <p className="error-text">{error}</p>}
@@ -128,8 +258,8 @@ export default function PromotionsPage() {
               <th>Title</th>
               <th>Discount</th>
               <th>Dates</th>
-              <th>Active</th>
-              <th />
+              <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -144,28 +274,48 @@ export default function PromotionsPage() {
                 <td>
                   {p.start_date} → {p.end_date}
                 </td>
-                <td>{p.is_active ? "Yes" : "No"}</td>
                 <td>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      api
-                        .broadcastPromotion(p.id, {})
-                        .then((res) => {
-                          const r = res as {
-                            telegram_sent: number;
-                            telegram_failed: number;
-                            recipients_total: number;
-                          };
-                          setMessage(
-                            `Broadcast done: ${r.telegram_sent} sent / ${r.telegram_failed} failed of ${r.recipients_total}`,
-                          );
-                        })
-                        .catch((err) => setError(String(err)))
-                    }
-                  >
-                    Broadcast
-                  </button>
+                  <span className={p.is_active ? "ok-text" : "error-text"}>
+                    {p.is_active ? "Active" : "Inactive"}
+                  </span>
+                </td>
+                <td>
+                  <div className="row-actions">
+                    <button type="button" className="ghost-btn" onClick={() => startEdit(p)}>
+                      Edit
+                    </button>
+                    {p.is_active && (
+                      <button type="button" className="ghost-btn" onClick={() => onBroadcast(p.id)}>
+                        Broadcast
+                      </button>
+                    )}
+                    {p.is_active ? (
+                      <button
+                        type="button"
+                        className="ghost-btn btn-danger"
+                        onClick={() => onDeactivate(p.id)}
+                      >
+                        Deactivate
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="ghost-btn btn-ok"
+                          onClick={() => onActivate(p.id)}
+                        >
+                          Activate
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-btn btn-danger"
+                          onClick={() => onDelete(p)}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

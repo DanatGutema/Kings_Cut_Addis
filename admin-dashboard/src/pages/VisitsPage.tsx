@@ -12,6 +12,15 @@ type Visit = {
   notes?: string | null;
 };
 
+
+type CustomerName = { 
+  id: string; 
+  first_name: string; 
+  last_name?: string | null; 
+  phone_number: string 
+};
+
+
 export default function VisitsPage() {
   const { staff } = useAuth();
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -20,11 +29,20 @@ export default function VisitsPage() {
   const [serviceId, setServiceId] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [customers, setCustomers] = useState<CustomerName[]>([]);
+  const customerMap = Object.fromEntries(
+    customers.map((c) => [c.id, `${c.first_name} ${c.last_name || ""}`])
+  );
 
   async function load() {
-    const [v, s] = await Promise.all([api.visits({ limit: 50 }), api.services(true)]);
+    const [v, s, c] = await Promise.all([
+      api.visits({ limit: 50 }), 
+      api.services(true),
+      api.customers({ limit: 200}),
+    ]);
     setVisits(v.items);
     setServices(s.items);
+    setCustomers(c.items);
     if (!serviceId && s.items[0]) setServiceId(s.items[0].id);
   }
 
@@ -62,9 +80,22 @@ export default function VisitsPage() {
 
       <form className="panel form-grid" onSubmit={onCreate}>
         <h2>Log visit</h2>
-        <label>
+        {/* <label>
           Customer ID
           <input value={customerId} onChange={(e) => setCustomerId(e.target.value)} required />
+        </label> */}
+
+
+        <label>
+          Customer
+          <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
+            <option value="" disabled>Select customer…</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.first_name} {c.last_name || ""} 
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           Service
@@ -90,7 +121,7 @@ export default function VisitsPage() {
           <thead>
             <tr>
               <th>Date</th>
-              <th>Customer</th>
+              <th>Customer Name</th>
               <th>Amount</th>
               <th>Notes</th>
             </tr>
@@ -99,7 +130,7 @@ export default function VisitsPage() {
             {visits.map((v) => (
               <tr key={v.id}>
                 <td>{new Date(v.visit_date).toLocaleString()}</td>
-                <td className="mono">{v.customer_id.slice(0, 8)}…</td>
+                <td>{customerMap[v.customer_id] || v.customer_id.slice(0, 8) + "…"}</td>
                 <td>{Number(v.total_amount).toLocaleString()} ETB</td>
                 <td>{v.notes || "—"}</td>
               </tr>

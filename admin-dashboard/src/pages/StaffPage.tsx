@@ -17,10 +17,16 @@ export default function StaffPage() {
         role: "staff" as "admin" | "staff",
     });
     const [message, setMessage] = useState("");
+    const [search, setSearch] = useState("");
 
     useEffect(() => {
         loadStaff();
     }, []);
+
+
+
+
+
 
     async function loadStaff() {
         try {
@@ -100,6 +106,14 @@ export default function StaffPage() {
                 <button onClick={() => setShowCreateForm(true)}>
                     + ADD STAFF
                 </button>
+            </div>
+
+            <div className="toolbar">
+                <input
+                    placeholder="Search by name or phone"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                />
             </div>
 
             {message && (
@@ -203,7 +217,15 @@ export default function StaffPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {staffList.map((member) => (
+                            {staffList.filter((member) => {
+                                if (!search.trim()) return true;
+                                const q = search.toLowerCase();
+                                return (
+                                    member.first_name.toLowerCase().includes(q) ||
+                                    (member.last_name && member.last_name.toLowerCase().includes(q)) ||
+                                    member.phone_number.includes(q)
+                                );
+                            }).map((member) => (
                                 <tr key={member.id}>
                                     <td>
                                         {member.first_name} {member.last_name}

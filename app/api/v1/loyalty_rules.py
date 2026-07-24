@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 
 from app.api.deps import AdminStaff, CurrentStaff, DbSession
 from app.models.loyalty_rule import LoyaltyRule
+from app.models.reward import Reward
 from app.schemas.loyalty_rule import LoyaltyRuleCreate, LoyaltyRuleOut, LoyaltyRuleUpdate
 from app.schemas.pagination import PaginatedResponse
 
@@ -81,7 +82,7 @@ def update_loyalty_rule(
     return rule
 
 
-@router.delete("/{rule_id}", response_model=LoyaltyRuleOut)
+@router.post("/{rule_id}/deactivate", response_model=LoyaltyRuleOut)
 def deactivate_loyalty_rule(
     rule_id: UUID,
     db: DbSession,
@@ -95,3 +96,50 @@ def deactivate_loyalty_rule(
     db.commit()
     db.refresh(rule)
     return rule
+
+
+@router.post("/{rule_id}/activate", response_model=LoyaltyRuleOut)
+def activate_loyalty_rule(
+    rule_id: UUID,
+    db: DbSession,
+    _: AdminStaff,
+) -> LoyaltyRule:
+    rule = db.get(LoyaltyRule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loyalty rule not found")
+
+    rule.is_active = True
+    db.commit()
+    db.refresh(rule)
+    return rule
+
+
+@router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_loyalty_rule(
+    rule_id: UUID,
+    db: DbSession,
+    _: AdminStaff,
+) -> None:
+    """Permanently delete a deactivated loyalty rule only when it has no related rewards."""
+    rule = db.get(LoyaltyRule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loyalty rule not found")
+
+    if rule.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Deactivate the loyalty rule before deleting",
+        )
+
+    if db.query(Reward.id).filter(Reward.loyalty_rule_id == rule.id).first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Cannot delete this loyalty rule because it has related rewards. "
+                "Keep it deactivated instead."
+            ),
+        )
+
+    db.delete(rule)
+    db.commit()
+    return None

@@ -3,8 +3,10 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 
-from app.api.deps import CurrentStaff, DbSession
+from app.api.deps import AdminStaff, CurrentStaff, DbSession
 from app.models.service import Service
+from app.models.service_order_item import ServiceOrderItem
+from app.models.visit_service import VisitService
 from app.schemas.pagination import PaginatedResponse
 from app.schemas.service import ServiceCreate, ServiceOut, ServiceUpdate
 
@@ -43,7 +45,7 @@ def list_services(
 def create_service(
     body: ServiceCreate,
     db: DbSession,
-    _: CurrentStaff,
+    _: AdminStaff,
 ) -> Service:
     existing = db.scalar(select(Service).where(Service.name == body.name))
     if existing is not None:
@@ -73,7 +75,7 @@ def update_service(
     service_id: UUID,
     body: ServiceUpdate,
     db: DbSession,
-    _: CurrentStaff,
+    _: AdminStaff,
 ) -> Service:
     service = db.get(Service, service_id)
     if service is None:
@@ -95,11 +97,11 @@ def update_service(
     return service
 
 
-@router.delete("/{service_id}", response_model=ServiceOut)
+@router.post("/{service_id}/deactivate", response_model=ServiceOut)
 def deactivate_service(
     service_id: UUID,
     db: DbSession,
-    _: CurrentStaff,
+    _: AdminStaff,
 ) -> Service:
     service = db.get(Service, service_id)
     if service is None:
@@ -109,3 +111,56 @@ def deactivate_service(
     db.commit()
     db.refresh(service)
     return service
+
+
+@router.post("/{service_id}/activate", response_model=ServiceOut)
+def activate_service(
+    service_id: UUID,
+    db: DbSession,
+    _: AdminStaff,
+) -> Service:
+    service = db.get(Service, service_id)
+    if service is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+    service.is_active = True
+    db.commit()
+    db.refresh(service)
+    return service
+
+
+@router.delete("/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_service(
+    service_id: UUID,
+    db: DbSession,
+    _: AdminStaff,
+) -> None:
+    """Permanently delete a deactivated service only when it has no related usage data."""
+    service = db.get(Service, service_id)
+    if service is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+    if service.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Deactivate the service before deleting",
+        )
+
+    blockers: list[str] = []
+    if db.query(VisitService.id).filter(VisitService.service_id == service.id).first():
+        blockers.append("visits")
+    if db.query(ServiceOrderItem.id).filter(ServiceOrderItem.service_id == service.id).first():
+        blockers.append("service orders")
+
+    if blockers:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Cannot delete this service because it has related "
+                f"{', '.join(blockers)}. Keep it deactivated instead."
+            ),
+        )
+
+    db.delete(service)
+    db.commit()
+    return None

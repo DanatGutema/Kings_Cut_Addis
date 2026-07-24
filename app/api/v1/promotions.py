@@ -63,7 +63,7 @@ def list_promotions(
 def create_promotion(
     body: PromotionCreate,
     db: DbSession,
-    current_staff: CurrentStaff,
+    current_staff: AdminStaff,
 ) -> Promotion:
     if body.end_date < body.start_date:
         raise HTTPException(
@@ -113,7 +113,7 @@ def update_promotion(
     return promotion
 
 
-@router.delete("/{promotion_id}", response_model=PromotionOut)
+@router.post("/{promotion_id}/deactivate", response_model=PromotionOut)
 def deactivate_promotion(
     promotion_id: UUID,
     db: DbSession,
@@ -124,6 +124,52 @@ def deactivate_promotion(
     db.commit()
     db.refresh(promotion)
     return promotion
+
+
+@router.post("/{promotion_id}/activate", response_model=PromotionOut)
+def activate_promotion(
+    promotion_id: UUID,
+    db: DbSession,
+    _: AdminStaff,
+) -> Promotion:
+    promotion = get_promotion(db, promotion_id)
+    promotion.is_active = True
+    db.commit()
+    db.refresh(promotion)
+    return promotion
+
+
+@router.delete("/{promotion_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_promotion(
+    promotion_id: UUID,
+    db: DbSession,
+    _: AdminStaff,
+) -> None:
+    """Permanently delete a deactivated promotion only when it has no recipients."""
+    promotion = get_promotion(db, promotion_id)
+
+    if promotion.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Deactivate the promotion before deleting",
+        )
+
+    if (
+        db.query(PromotionRecipient.id)
+        .filter(PromotionRecipient.promotion_id == promotion.id)
+        .first()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Cannot delete this promotion because it has related broadcast recipients. "
+                "Keep it deactivated instead."
+            ),
+        )
+
+    db.delete(promotion)
+    db.commit()
+    return None
 
 
 @router.post("/{promotion_id}/broadcast", response_model=PromotionBroadcastResult)

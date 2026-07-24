@@ -5,6 +5,14 @@ from sqlalchemy import func, or_, select
 
 from app.api.deps import CurrentStaff, DbSession
 from app.models.customer import Customer
+from app.models.customer_session import CustomerSession
+from app.models.promotion_recipient import PromotionRecipient
+from app.models.refresh_token import RefreshToken
+from app.models.reward import Reward
+from app.models.service_order import ServiceOrder
+from app.models.sms_log import SmsLog
+from app.models.telegram_log import TelegramLog
+from app.models.visit import Visit
 from app.schemas.customer import CustomerCreate, CustomerOut, CustomerSummary, CustomerUpdate
 from app.schemas.pagination import PaginatedResponse
 
@@ -120,3 +128,49 @@ def update_customer(
     db.commit()
     db.refresh(customer)
     return customer
+
+
+@router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_customer(
+    customer_id: UUID,
+    db: DbSession,
+    _: CurrentStaff,
+) -> None:
+    """Permanently delete a customer only when they have no related business data."""
+    customer = db.get(Customer, customer_id)
+    if customer is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+
+    blockers: list[str] = []
+    if db.query(Visit.id).filter(Visit.customer_id == customer.id).first():
+        blockers.append("visits")
+    if db.query(Reward.id).filter(Reward.customer_id == customer.id).first():
+        blockers.append("rewards")
+    if db.query(ServiceOrder.id).filter(ServiceOrder.customer_id == customer.id).first():
+        blockers.append("service orders")
+    if db.query(PromotionRecipient.id).filter(PromotionRecipient.customer_id == customer.id).first():
+        blockers.append("promotions")
+    if db.query(SmsLog.id).filter(SmsLog.customer_id == customer.id).first():
+        blockers.append("SMS logs")
+    if db.query(TelegramLog.id).filter(TelegramLog.customer_id == customer.id).first():
+        blockers.append("Telegram logs")
+
+    if blockers:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Cannot delete this customer because they have related "
+                f"{', '.join(blockers)}."
+            ),
+        )
+
+    db.query(CustomerSession).filter(CustomerSession.customer_id == customer.id).delete(
+        synchronize_session=False
+    )
+    db.query(RefreshToken).filter(RefreshToken.customer_id == customer.id).delete(
+        synchronize_session=False
+    )
+
+    db.delete(customer)
+    db.commit()
+    return None

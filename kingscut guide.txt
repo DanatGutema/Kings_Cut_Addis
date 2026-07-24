@@ -1,0 +1,29 @@
+Here's how to run all services:
+Prerequisites
+- Python 3.11+ with venv
+- Node.js v18+
+- PostgreSQL running with a KingsCutAddis database
+- A configured .env file (copy from .env.example)
+Terminal 1 — FastAPI Backend
+venv\Scripts\activate
+uvicorn app.main:app --reload --port 8000
+Runs at http://127.0.0.1:8000 (Swagger at /docs)
+Terminal 2 — Telegram Bot
+venv\Scripts\activate
+python -m bot.main
+Runs in long-polling mode (no port)
+Terminal 3 — Admin Dashboard
+cd admin-dashboard
+npm run dev
+Runs at http://localhost:5174
+Terminal 4 — Mini App (optional)
+cd mini-app
+npm run dev
+Runs at http://localhost:5173
+First-time setup before running:
+pip install -r requirements.txt
+python scripts/seed_admin.py
+python scripts/seed_services.py
+python scripts/seed_loyalty_rules.py
+Login: admin@kingscutaddis.com / Admin@123456
+▣  Build · Big Pickle · 2m 53s

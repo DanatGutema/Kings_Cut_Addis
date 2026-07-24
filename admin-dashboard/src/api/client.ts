@@ -135,6 +135,9 @@ export const api = {
   }) {
     return request("/api/v1/customers", { method: "POST", body: JSON.stringify(body) });
   },
+  deleteCustomer(customerId: string) {
+    return request<void>(`/api/v1/customers/${customerId}`, { method: "DELETE" });
+  },
   services(activeOnly = true) {
     return request<
       Paginated<{
@@ -154,7 +157,13 @@ export const api = {
     return request(`/api/v1/services/${id}`, { method: "PATCH", body: JSON.stringify(body) });
   },
   deactivateService(id: string) {
-    return request(`/api/v1/services/${id}`, { method: "DELETE" });
+    return request(`/api/v1/services/${id}/deactivate`, { method: "POST" });
+  },
+  activateService(id: string) {
+    return request(`/api/v1/services/${id}/activate`, { method: "POST" });
+  },
+  deleteService(id: string) {
+    return request<void>(`/api/v1/services/${id}`, { method: "DELETE" });
   },
   visits(params: { skip?: number; limit?: number; customer_id?: string } = {}) {
     const q = new URLSearchParams();
@@ -226,6 +235,21 @@ export const api = {
   createLoyaltyRule(body: Record<string, unknown>) {
     return request("/api/v1/loyalty-rules", { method: "POST", body: JSON.stringify(body) });
   },
+  updateLoyaltyRule(id: string, body: Record<string, unknown>) {
+    return request(`/api/v1/loyalty-rules/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  },
+  deactivateLoyaltyRule(id: string) {
+    return request(`/api/v1/loyalty-rules/${id}/deactivate`, { method: "POST" });
+  },
+  activateLoyaltyRule(id: string) {
+    return request(`/api/v1/loyalty-rules/${id}/activate`, { method: "POST" });
+  },
+  deleteLoyaltyRule(id: string) {
+    return request<void>(`/api/v1/loyalty-rules/${id}`, { method: "DELETE" });
+  },
   rewards(params: { status?: string; customer_id?: string } = {}) {
     const q = new URLSearchParams({ limit: "100" });
     if (params.status) q.set("status", params.status);
@@ -271,6 +295,21 @@ export const api = {
   },
   createPromotion(body: Record<string, unknown>) {
     return request("/api/v1/promotions", { method: "POST", body: JSON.stringify(body) });
+  },
+  updatePromotion(id: string, body: Record<string, unknown>) {
+    return request(`/api/v1/promotions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  },
+  deactivatePromotion(id: string) {
+    return request(`/api/v1/promotions/${id}/deactivate`, { method: "POST" });
+  },
+  activatePromotion(id: string) {
+    return request(`/api/v1/promotions/${id}/activate`, { method: "POST" });
+  },
+  deletePromotion(id: string) {
+    return request<void>(`/api/v1/promotions/${id}`, { method: "DELETE" });
   },
   broadcastPromotion(id: string, body: Record<string, unknown> = {}) {
     return request(`/api/v1/promotions/${id}/broadcast`, {
