@@ -49,5 +49,6 @@ class CustomerSummary(BaseModel):
     total_spending: Decimal
     loyalty_status: str
     last_visit_date: Optional[date] = None
+    is_active: bool
 
     model_config = ConfigDict(from_attributes=True)

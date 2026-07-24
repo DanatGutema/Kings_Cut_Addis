@@ -22,3 +22,4 @@ class Service(Base):
 
     visit_services = relationship("VisitService", back_populates="service")
     order_items = relationship("ServiceOrderItem", back_populates="service")
+    appointments = relationship("Appointment", back_populates="service")

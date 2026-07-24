@@ -215,12 +215,61 @@ input {
 .badge.pending {
   color: var(--gold);
 }
+
+.badge.accepted,
+.badge.completed {
+  color: var(--ok);
+}
+
+.badge.rejected {
+  color: var(--danger);
+}
+
 .badge.redeemed {
   color: var(--ok);
 }
+
 .badge.expired,
 .badge.void {
   color: var(--danger);
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(18, 12, 8, 0.55);
+  color: var(--cream);
+  padding: 0.7rem 0.8rem;
+}
+
+.primary-btn {
+  width: 100%;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.85rem 1rem;
+  font-weight: 700;
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--gold), var(--bronze));
+}
+
+.ok-text {
+  color: var(--ok);
+  margin: 0.75rem 0 0;
+}
+
+.error-text {
+  color: var(--danger);
+  margin: 0.75rem 0 0;
 }
 
 .nav {
@@ -229,7 +278,7 @@ input {
   right: 0.75rem;
   bottom: 0.75rem;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 0.35rem;
   padding: 0.4rem;
   border-radius: 1rem;

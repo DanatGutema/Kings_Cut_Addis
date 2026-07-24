@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class DashboardMetrics(BaseModel):
     total_customers: int
     visits_today: int
+    total_visits: int
     active_rewards: int
     revenue_today: Decimal
     revenue_this_month: Decimal

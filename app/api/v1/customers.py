@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 
 from app.api.deps import CurrentStaff, DbSession
+from app.models.appointment import Appointment
 from app.models.customer import Customer
 from app.models.customer_session import CustomerSession
 from app.models.promotion_recipient import PromotionRecipient
@@ -130,16 +131,54 @@ def update_customer(
     return customer
 
 
+@router.post("/{customer_id}/deactivate", response_model=CustomerOut)
+def deactivate_customer(
+    customer_id: UUID,
+    db: DbSession,
+    _: CurrentStaff,
+) -> Customer:
+    customer = db.get(Customer, customer_id)
+    if customer is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+
+    customer.is_active = False
+    db.commit()
+    db.refresh(customer)
+    return customer
+
+
+@router.post("/{customer_id}/activate", response_model=CustomerOut)
+def activate_customer(
+    customer_id: UUID,
+    db: DbSession,
+    _: CurrentStaff,
+) -> Customer:
+    customer = db.get(Customer, customer_id)
+    if customer is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+
+    customer.is_active = True
+    db.commit()
+    db.refresh(customer)
+    return customer
+
+
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_customer(
     customer_id: UUID,
     db: DbSession,
     _: CurrentStaff,
 ) -> None:
-    """Permanently delete a customer only when they have no related business data."""
+    """Permanently delete a deactivated customer only when they have no related business data."""
     customer = db.get(Customer, customer_id)
     if customer is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+
+    if customer.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Deactivate the customer before deleting",
+        )
 
     blockers: list[str] = []
     if db.query(Visit.id).filter(Visit.customer_id == customer.id).first():
@@ -154,13 +193,15 @@ def delete_customer(
         blockers.append("SMS logs")
     if db.query(TelegramLog.id).filter(TelegramLog.customer_id == customer.id).first():
         blockers.append("Telegram logs")
+    if db.query(Appointment.id).filter(Appointment.customer_id == customer.id).first():
+        blockers.append("appointments")
 
     if blockers:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 "Cannot delete this customer because they have related "
-                f"{', '.join(blockers)}."
+                f"{', '.join(blockers)}. Keep them deactivated instead."
             ),
         )
 

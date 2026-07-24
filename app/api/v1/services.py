@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 
 from app.api.deps import AdminStaff, CurrentStaff, DbSession
+from app.models.appointment import Appointment
 from app.models.service import Service
 from app.models.service_order_item import ServiceOrderItem
 from app.models.visit_service import VisitService
@@ -151,6 +152,8 @@ def delete_service(
         blockers.append("visits")
     if db.query(ServiceOrderItem.id).filter(ServiceOrderItem.service_id == service.id).first():
         blockers.append("service orders")
+    if db.query(Appointment.id).filter(Appointment.service_id == service.id).first():
+        blockers.append("appointments")
 
     if blockers:
         raise HTTPException(

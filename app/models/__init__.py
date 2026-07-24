@@ -17,3 +17,4 @@ from app.models.audit_log import AuditLog
 from app.models.service_order import ServiceOrder
 from app.models.service_order_item import ServiceOrderItem
 from app.models.staff import StaffInvitation
+from app.models.appointment import Appointment

@@ -35,7 +35,7 @@ def _day_start(d: date | None = None) -> datetime:
 def dashboard_metrics(db: DbSession, _: CurrentStaff) -> DashboardMetrics:
     today_start = _day_start()
     month_start = _day_start(date.today().replace(day=1))
-
+    total_visits = db.scalar(select(func.count()).select_from(Visit)) or 0
     total_customers = db.scalar(select(func.count()).select_from(Customer)) or 0
     visits_today = (
         db.scalar(select(func.count()).select_from(Visit).where(Visit.visit_date >= today_start))
@@ -60,6 +60,7 @@ def dashboard_metrics(db: DbSession, _: CurrentStaff) -> DashboardMetrics:
         total_customers=total_customers,
         visits_today=visits_today,
         active_rewards=active_rewards,
+        total_visits=total_visits,
         revenue_today=Decimal(revenue_today or 0),
         revenue_this_month=Decimal(revenue_month or 0),
     )

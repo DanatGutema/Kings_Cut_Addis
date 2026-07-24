@@ -1,25 +1,36 @@
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   authWithTelegram,
+  createAppointment,
+  fetchAppointments,
   fetchLoyalty,
   fetchPromotions,
   fetchQr,
   fetchRewards,
+  fetchServices,
+  type Appointment,
   type Customer,
   type LoyaltyProgress,
   type Promotion,
   type QrPayload,
   type Reward,
+  type Service,
 } from "./api";
 import { bootstrapTelegram } from "./telegram";
 import "./styles.css";
 
-type Tab = "checkin" | "loyalty" | "rewards" | "promos";
+type Tab = "checkin" | "book" | "loyalty" | "rewards" | "promos";
 
 function progressPct(current: number, target?: number | null) {
   if (!target || target <= 0) return 0;
   return Math.min(100, Math.round((current / target) * 100));
+}
+
+function toIsoLocal(value: string) {
+  // datetime-local → ISO without timezone (backend expects naive/local-ish UTC parse)
+  if (!value) return value;
+  return new Date(value).toISOString();
 }
 
 export default function App() {
@@ -30,6 +41,13 @@ export default function App() {
   const [loyalty, setLoyalty] = useState<LoyaltyProgress | null>(null);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [promos, setPromos] = useState<Promotion[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [serviceId, setServiceId] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [notes, setNotes] = useState("");
+  const [bookMessage, setBookMessage] = useState<string | null>(null);
+  const [bookError, setBookError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -49,16 +67,22 @@ export default function App() {
         const auth = await authWithTelegram(initData);
         setToken(auth.access_token);
         setCustomer(auth.customer);
-        const [qrData, loyaltyData, rewardsData, promosData] = await Promise.all([
-          fetchQr(auth.access_token),
-          fetchLoyalty(auth.access_token),
-          fetchRewards(auth.access_token),
-          fetchPromotions(auth.access_token),
-        ]);
+        const [qrData, loyaltyData, rewardsData, promosData, servicesData, apptData] =
+          await Promise.all([
+            fetchQr(auth.access_token),
+            fetchLoyalty(auth.access_token),
+            fetchRewards(auth.access_token),
+            fetchPromotions(auth.access_token),
+            fetchServices(auth.access_token),
+            fetchAppointments(auth.access_token),
+          ]);
         setQr(qrData);
         setLoyalty(loyaltyData);
         setRewards(rewardsData);
         setPromos(promosData);
+        setServices(servicesData);
+        setAppointments(apptData);
+        if (servicesData[0]) setServiceId(servicesData[0].id);
         tg?.HapticFeedback?.impactOccurred("light");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not load Mini App");
@@ -74,6 +98,27 @@ export default function App() {
     () => Number(customer?.total_spending ?? 0).toLocaleString(),
     [customer],
   );
+
+  async function onBook(e: FormEvent) {
+    e.preventDefault();
+    if (!token) return;
+    setBookError(null);
+    setBookMessage(null);
+    try {
+      await createAppointment(token, {
+        service_id: serviceId,
+        scheduled_at: toIsoLocal(scheduledAt),
+        notes: notes.trim() || undefined,
+      });
+      setNotes("");
+      setBookMessage("Appointment requested. We'll notify you when staff responds.");
+      const apptData = await fetchAppointments(token);
+      setAppointments(apptData);
+      bootstrapTelegram()?.HapticFeedback?.notificationOccurred("success");
+    } catch (err) {
+      setBookError(err instanceof Error ? err.message : "Booking failed");
+    }
+  }
 
   if (loading) {
     return (
@@ -123,6 +168,55 @@ export default function App() {
             <br />
             {qr?.phone_number}
           </p>
+        </section>
+      )}
+
+      {tab === "book" && (
+        <section className="section">
+          <h2>Book</h2>
+          <form className="panel" onSubmit={onBook}>
+            <label className="field">
+              Service
+              <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} required>
+                {services.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — {Number(s.price).toLocaleString()} ETB
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Date & time
+              <input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(e) => setScheduledAt(e.target.value)}
+                required
+              />
+            </label>
+            <label className="field">
+              Notes (optional)
+              <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any request?" />
+            </label>
+            <button type="submit" className="primary-btn">
+              Request appointment
+            </button>
+            {bookMessage && <p className="ok-text">{bookMessage}</p>}
+            {bookError && <p className="error-text">{bookError}</p>}
+            {!services.length && <p className="qr-meta">No services available to book yet.</p>}
+          </form>
+
+          <div className="list" style={{ marginTop: "1rem" }}>
+            <h3 style={{ margin: "0 0 0.5rem" }}>Your appointments</h3>
+            {appointments.map((a) => (
+              <article className="card-item" key={a.id}>
+                <h3>{a.service_name || "Service"}</h3>
+                <p>{new Date(a.scheduled_at).toLocaleString()}</p>
+                <span className={`badge ${a.status}`}>{a.status}</span>
+              </article>
+            ))}
+            {!appointments.length && <p className="qr-meta">No bookings yet.</p>}
+          </div>
         </section>
       )}
 
@@ -220,6 +314,7 @@ export default function App() {
         {(
           [
             ["checkin", "Check-in"],
+            ["book", "Book"],
             ["loyalty", "Loyalty"],
             ["rewards", "Rewards"],
             ["promos", "Promos"],

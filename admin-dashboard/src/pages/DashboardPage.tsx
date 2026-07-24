@@ -9,16 +9,21 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 export default function DashboardPage() {
   const [metrics, setMetrics] = useState<{
     total_customers: number;
     visits_today: number;
+    appointment: number;
     active_rewards: number;
     revenue_today: number;
     revenue_this_month: number;
   } | null>(null);
   const [trend, setTrend] = useState<{ period: string; visit_count: number }[]>([]);
+  const { staff } = useAuth();
+  const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,26 +61,91 @@ export default function DashboardPage() {
       </header>
 
       <div className="metric-grid">
-        <article className="metric">
+        {/* <article className="metric">
+          <span>Customers</span>
+          <strong>{metrics.total_customers}</strong>
+        </article> */}
+
+
+        <article
+          className="metric"
+          style={{ cursor: "pointer" }}
+          onClick={() => {
+            if (staff?.role === "admin") {
+              navigate("/customers");
+            } else {
+              alert("You do not have this privilege");
+            }
+          }}
+        >
           <span>Customers</span>
           <strong>{metrics.total_customers}</strong>
         </article>
-        <article className="metric">
+
+
+        <article 
+          className="metric"
+          style={{ cursor: "pointer"}}
+          onClick={() => {
+            navigate("/visits");
+          }}
+             >
           <span>Visits today</span>
           <strong>{metrics.visits_today}</strong>
         </article>
-        <article className="metric">
+
+
+        <article className="metric"
+          style={{ cursor: "pointer"}}
+          onClick={() => {
+            navigate("/appointments");
+          }}
+        >
+          <span>Total Appointments</span>
+          <strong>{metrics.visits_today}</strong>
+        </article>
+
+
+        <article className="metric"
+          style={{ cursor: "pointer"}}
+          onClick={() => {
+            navigate("/rewards");
+          }}
+             
+        >
           <span>Active rewards</span>
           <strong>{metrics.active_rewards}</strong>
         </article>
-        <article className="metric">
+
+
+        {staff?.role === "admin" && (
+        <article className="metric"
+        style={{ cursor: "pointer"}}
+          onClick={() => {
+            navigate("/analytics");
+          }}
+             
+        >
           <span>Revenue today</span>
           <strong>{Number(metrics.revenue_today).toLocaleString()} ETB</strong>
         </article>
-        <article className="metric wide">
+        )}
+
+
+
+      {staff?.role === "admin" && (
+        <article className="metric wide"
+        style={{ cursor: "pointer"}}
+          onClick={() => {
+            navigate("/analytics");
+          }}
+             
+        >
           <span>Revenue this month</span>
           <strong>{Number(metrics.revenue_this_month).toLocaleString()} ETB</strong>
         </article>
+        )}
+
       </div>
 
       <section className="panel">

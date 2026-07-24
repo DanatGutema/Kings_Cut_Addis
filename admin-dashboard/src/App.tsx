@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import AppLayout from "./layout/AppLayout";
 import AnalyticsPage from "./pages/AnalyticsPage";
+import AppointmentsPage from "./pages/AppointmentsPage";
 import CheckInPage from "./pages/CheckInPage";
 import CustomersPage from "./pages/CustomersPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -39,6 +40,7 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="checkin" element={<CheckInPage />} />
           <Route path="customers" element={<CustomersPage />} />
+          <Route path="appointments" element={<AppointmentsPage />} />
           <Route path="visits" element={<VisitsPage />} />
           <Route path="services" element={<ServicesPage />} />
           <Route path="loyalty" element={<LoyaltyPage />} />

@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     analytics,
+    appointments,
     auth,
     checkin,
     customer_visits,
@@ -21,6 +22,7 @@ api_router.include_router(customers.router)
 api_router.include_router(customer_visits.router, prefix="/customers")
 api_router.include_router(services.router)
 api_router.include_router(visits.router)
+api_router.include_router(appointments.router)
 api_router.include_router(checkin.router)
 api_router.include_router(loyalty_rules.router)
 api_router.include_router(rewards.router)

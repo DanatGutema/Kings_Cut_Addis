@@ -10,6 +10,7 @@ type CustomerRow = {
   total_spending: number;
   loyalty_status: string;
   last_visit_date?: string | null;
+  is_active: boolean;
 };
 
 export default function CustomersPage() {
@@ -34,13 +35,10 @@ export default function CustomersPage() {
     void load();
   }, []);
 
-
   useEffect(() => {
     const t = setTimeout(() => void load(search), 300);
     return () => clearTimeout(t);
   }, [search]);
-
-
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -62,11 +60,42 @@ export default function CustomersPage() {
     }
   }
 
+  async function onDeactivate(customer: CustomerRow) {
+    if (
+      !confirm(
+        `Deactivate ${customer.first_name} ${customer.last_name || ""}? They will not be usable for check-in until reactivated.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    try {
+      await api.deactivateCustomer(customer.id);
+      setMessage("Customer deactivated");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Deactivate failed");
+    }
+  }
+
+  async function onActivate(customer: CustomerRow) {
+    setError(null);
+    setMessage(null);
+    try {
+      await api.activateCustomer(customer.id);
+      setMessage("Customer activated");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Activate failed");
+    }
+  }
+
   async function onDelete(customer: CustomerRow) {
     if (
       !confirm(
         `Permanently delete ${customer.first_name} ${customer.last_name || ""}? ` +
-          "This only works if they have no visits, rewards, orders, or message history."
+          "This only works if they have no visits, rewards, orders, or message history.",
       )
     ) {
       return;
@@ -97,9 +126,6 @@ export default function CustomersPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        {/* <button type="button" onClick={() => load(search)}>
-          Search
-        </button> */}
       </div>
 
       <form className="panel form-grid compact" onSubmit={onCreate}>
@@ -125,6 +151,7 @@ export default function CustomersPage() {
               <th>Spending</th>
               <th>Tier</th>
               <th>Last visit</th>
+              <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -140,14 +167,38 @@ export default function CustomersPage() {
                 <td>{c.loyalty_status}</td>
                 <td>{c.last_visit_date || "—"}</td>
                 <td>
+                  <span className={c.is_active ? "ok-text" : "error-text"}>
+                    {c.is_active ? "Active" : "Inactive"}
+                  </span>
+                </td>
+                <td>
                   <div className="row-actions">
-                    <button
-                      type="button"
-                      className="ghost-btn btn-danger"
-                      onClick={() => onDelete(c)}
-                    >
-                      Delete
-                    </button>
+                    {c.is_active ? (
+                      <button
+                        type="button"
+                        className="ghost-btn btn-danger"
+                        onClick={() => onDeactivate(c)}
+                      >
+                        Deactivate
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="ghost-btn btn-ok"
+                          onClick={() => onActivate(c)}
+                        >
+                          Activate
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-btn btn-danger"
+                          onClick={() => onDelete(c)}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>

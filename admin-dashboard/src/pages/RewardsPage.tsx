@@ -36,13 +36,26 @@ export default function RewardsPage() {
   );
 
 
+    const [loyalty, setLoyalty] = useState<{
+    rewards_earned: number;
+    rewards_redeemed: number;
+    rewards_expired: number;
+    redemption_rate: number;
+    expiry_rate: number;
+  } | null>(null)
+
+
   async function load(nextStatus = status) {
-    const [r, c] = await Promise.all([
+    const [r, c, l] = await Promise.all([
         api.rewards({ status: nextStatus || undefined }),
         api.customers({ limit: 200 }),
+        api.loyaltyMetrics(),
+
     ]);
     setRows(r.items);
     setCustomers(c.items);
+    setLoyalty(l);
+
   }
 
   useEffect(() => {
@@ -71,6 +84,26 @@ export default function RewardsPage() {
         </select>
       </header>
 
+    {loyalty && (
+      <div className="metric-grid">
+        <article className="metric">
+          <span>Rewards earned</span>
+          <strong>{loyalty.rewards_earned}</strong>
+        </article>
+        <article className="metric">
+          <span>Redeemed</span>
+          <strong>{loyalty.rewards_redeemed}</strong>
+        </article>
+        <article className="metric">
+          <span>Expired</span>
+          <strong>{loyalty.rewards_expired}</strong>
+        </article>
+        <article className="metric">
+          <span>Redemption rate</span>
+          <strong>{(loyalty.redemption_rate * 100).toFixed(1)}%</strong>
+        </article>
+      </div>
+    )}
       {error && <p className="error-text">{error}</p>}
 
       <div className="table-wrap panel">

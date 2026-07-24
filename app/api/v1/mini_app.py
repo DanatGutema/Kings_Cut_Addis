@@ -7,17 +7,21 @@ from sqlalchemy import and_, select
 from app.api.core.security import create_access_token
 from app.api.core.telegram_auth import validate_init_data
 from app.api.deps import CurrentCustomer, DbSession
+from app.api.services import appointments as appointment_service
 from app.api.services.loyalty_engine import get_rule_progress
 from app.models.customer import Customer
 from app.models.customer_session import CustomerSession
 from app.models.loyalty_rule import LoyaltyRule
 from app.models.promotion import Promotion
 from app.models.reward import Reward
+from app.models.service import Service
+from app.schemas.appointment import AppointmentCreate, AppointmentOut
 from app.schemas.auth import TelegramAuthRequest
 from app.schemas.customer import CustomerOut
 from app.schemas.loyalty import LoyaltyProgressOut, RuleProgressOut
 from app.schemas.promotion import PromotionOut
 from app.schemas.reward import RewardOut
+from app.schemas.service import ServiceOut
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/mini-app", tags=["mini-app"])
@@ -129,3 +133,37 @@ def mini_app_promotions(db: DbSession, customer: CurrentCustomer) -> list[Promot
             .order_by(Promotion.start_date.desc())
         ).all()
     )
+
+
+@router.get("/services", response_model=list[ServiceOut])
+def mini_app_services(db: DbSession, _: CurrentCustomer) -> list[Service]:
+    return list(
+        db.scalars(
+            select(Service)
+            .where(Service.is_active.is_(True))
+            .order_by(Service.name)
+        ).all()
+    )
+
+
+@router.get("/appointments", response_model=list[AppointmentOut])
+def mini_app_list_appointments(
+    db: DbSession,
+    customer: CurrentCustomer,
+) -> list[AppointmentOut]:
+    items, _ = appointment_service.list_appointments(
+        db,
+        skip=0,
+        limit=50,
+        customer_id=customer.id,
+    )
+    return items
+
+
+@router.post("/appointments", response_model=AppointmentOut, status_code=status.HTTP_201_CREATED)
+def mini_app_create_appointment(
+    body: AppointmentCreate,
+    db: DbSession,
+    customer: CurrentCustomer,
+) -> AppointmentOut:
+    return appointment_service.create_appointment(db, customer, body)

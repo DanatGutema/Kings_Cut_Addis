@@ -52,3 +52,4 @@ class Customer(Base):
     sms_logs = relationship("SmsLog", back_populates="customer")
     telegram_logs = relationship("TelegramLog", back_populates="customer")
     service_orders = relationship("ServiceOrder", back_populates="customer")
+    appointments = relationship("Appointment", back_populates="customer")

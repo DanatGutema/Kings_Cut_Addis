@@ -9,6 +9,9 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../api/client";
+// import { Navigate } from "react-router-dom";
+import { useNavigate } from "react-router";
+
 
 export default function AnalyticsPage() {
   const [byService, setByService] = useState<
@@ -23,21 +26,24 @@ export default function AnalyticsPage() {
       total_spending: number;
     }[]
   >([]);
+
+  const navigate = useNavigate();
   const [loyalty, setLoyalty] = useState<{
-    rewards_earned: number;
-    rewards_redeemed: number;
-    rewards_expired: number;
     redemption_rate: number;
-    expiry_rate: number;
+  } | null>(null);
+  const [metrics, setMetrics] = useState<{
+    total_customers: number;
+    total_visits: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.revenueByService(), api.topCustomers("spending"), api.loyaltyMetrics()])
-      .then(([services, customers, loyaltyMetrics]) => {
+    Promise.all([api.revenueByService(), api.topCustomers("spending"), api.loyaltyMetrics(), api.dashboard()])
+      .then(([services, customers, loyaltyMetrics, m]) => {
         setByService(services);
         setTop(customers);
         setLoyalty(loyaltyMetrics);
+        setMetrics(m);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load"));
   }, []);
@@ -61,22 +67,38 @@ export default function AnalyticsPage() {
         </div>
       </header>
 
-      {loyalty && (
+      {loyalty && metrics && (
         <div className="metric-grid">
-          <article className="metric">
-            <span>Rewards earned</span>
-            <strong>{loyalty.rewards_earned}</strong>
+          <article className="metric"
+          style={{ cursor: "pointer" }}
+            onClick={() => {
+              navigate("/visits");
+            }}
+          >
+            <span>Total Visits</span>
+            <strong>{metrics.total_visits}</strong>
           </article>
-          <article className="metric">
-            <span>Redeemed</span>
-            <strong>{loyalty.rewards_redeemed}</strong>
+          <article 
+            className="metric"
+            style={{ cursor: "pointer" }}
+            onClick={() => {
+              navigate("/customers");
+            }}
+          >
+            <span>Total Customer</span>
+            <strong>{metrics.total_customers}</strong>
           </article>
-          <article className="metric">
-            <span>Expired</span>
+          {/* <article className="metric">
+            <span>Revenue By Service</span>
             <strong>{loyalty.rewards_expired}</strong>
-          </article>
-          <article className="metric">
-            <span>Redemption rate</span>
+          </article> */}
+          <article className="metric"
+            style={{ cursor: "pointer" }}
+            onClick={() => {
+              navigate("/rewards");
+            }}  
+          >
+            <span>Reward Redemetion Rate</span>
             <strong>{(loyalty.redemption_rate * 100).toFixed(1)}%</strong>
           </article>
         </div>

@@ -5,6 +5,7 @@ const links = [
   { to: "/", label: "Dashboard", end: true },
   { to: "/checkin", label: "Check-in" },
   { to: "/customers", label: "Customers" },
+  { to: "/appointments", label: "Appointments" },
   { to: "/visits", label: "Visits" },
   { to: "/services", label: "Services" },
   { to: "/loyalty", label: "Loyalty" },
@@ -31,6 +32,8 @@ export default function AppLayout() {
                 (link.to !== "/staff" &&
                   link.to !== "/services" &&
                   link.to !== "/loyalty" &&
+                  link.to !== "/customers" &&
+                  link.to !== "/analytics" &&
                   link.to !== "/promotions") ||
                 staff?.role === "admin",
             )

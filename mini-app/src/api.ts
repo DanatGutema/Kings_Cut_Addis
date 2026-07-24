@@ -105,3 +105,39 @@ export function fetchRewards(token: string) {
 export function fetchPromotions(token: string) {
   return request<Promotion[]>("/api/v1/mini-app/promotions", {}, token);
 }
+
+export type Service = {
+  id: string;
+  name: string;
+  price: number | string;
+  description?: string | null;
+  duration_minutes?: number | null;
+};
+
+export type Appointment = {
+  id: string;
+  service_id: string;
+  scheduled_at: string;
+  notes?: string | null;
+  status: "pending" | "accepted" | "rejected" | "completed";
+  service_name?: string | null;
+  service_price?: number | string | null;
+};
+
+export function fetchServices(token: string) {
+  return request<Service[]>("/api/v1/mini-app/services", {}, token);
+}
+
+export function fetchAppointments(token: string) {
+  return request<Appointment[]>("/api/v1/mini-app/appointments", {}, token);
+}
+
+export function createAppointment(
+  token: string,
+  body: { service_id: string; scheduled_at: string; notes?: string },
+) {
+  return request<Appointment>("/api/v1/mini-app/appointments", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }, token);
+}

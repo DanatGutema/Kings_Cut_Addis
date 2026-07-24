@@ -74,8 +74,10 @@ export const api = {
     return request<{
       total_customers: number;
       visits_today: number;
+      appointment: number;
       active_rewards: number;
       revenue_today: number;
+      total_visits: number
       revenue_this_month: number;
     }>("/api/v1/analytics/dashboard");
   },
@@ -124,6 +126,7 @@ export const api = {
         total_spending: number;
         loyalty_status: string;
         last_visit_date?: string | null;
+        is_active: boolean;
       }>
     >(`/api/v1/customers?${q}`);
   },
@@ -134,6 +137,12 @@ export const api = {
     email?: string;
   }) {
     return request("/api/v1/customers", { method: "POST", body: JSON.stringify(body) });
+  },
+  deactivateCustomer(customerId: string) {
+    return request(`/api/v1/customers/${customerId}/deactivate`, { method: "POST" });
+  },
+  activateCustomer(customerId: string) {
+    return request(`/api/v1/customers/${customerId}/activate`, { method: "POST" });
   },
   deleteCustomer(customerId: string) {
     return request<void>(`/api/v1/customers/${customerId}`, { method: "DELETE" });
@@ -188,6 +197,37 @@ export const api = {
     services: { service_id: string; quantity: number }[];
   }) {
     return request("/api/v1/visits", { method: "POST", body: JSON.stringify(body) });
+  },
+  appointments(params: { status?: string; skip?: number; limit?: number } = {}) {
+    const q = new URLSearchParams();
+    q.set("skip", String(params.skip ?? 0));
+    q.set("limit", String(params.limit ?? 100));
+    if (params.status) q.set("status", params.status);
+    return request<
+      Paginated<{
+        id: string;
+        customer_id: string;
+        service_id: string;
+        scheduled_at: string;
+        notes?: string | null;
+        status: "pending" | "accepted" | "rejected" | "completed";
+        visit_id?: string | null;
+        completed_at?: string | null;
+        customer_name?: string | null;
+        customer_phone?: string | null;
+        service_name?: string | null;
+        service_price?: number | null;
+      }>
+    >(`/api/v1/appointments?${q}`);
+  },
+  acceptAppointment(id: string) {
+    return request(`/api/v1/appointments/${id}/accept`, { method: "POST" });
+  },
+  rejectAppointment(id: string) {
+    return request(`/api/v1/appointments/${id}/reject`, { method: "POST" });
+  },
+  completeAppointment(id: string) {
+    return request(`/api/v1/appointments/${id}/complete`, { method: "POST" });
   },
   checkinQr(qr_token: string, staff_id: string) {
     return request<{
