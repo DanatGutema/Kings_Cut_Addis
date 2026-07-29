@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
+from app.api.services.media_storage import media_disk_path
 from app.api.services.telegram_notify import (
     format_promotion_message,
     mini_app_keyboard,
-    send_telegram_message,
+    send_promotion_telegram,
 )
 from app.models.customer import Customer
 from app.models.promotion import Promotion
@@ -25,6 +25,33 @@ def get_promotion(db: Session, promotion_id: UUID) -> Promotion:
     if promotion is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promotion not found")
     return promotion
+
+
+def _promotion_message(promotion: Promotion) -> tuple[str, object]:
+    message = format_promotion_message(
+        promotion.title,
+        promotion.description,
+        promotion.discount_type,
+        promotion.discount_value,
+        promotion.start_date,
+        promotion.end_date,
+    )
+    return message, mini_app_keyboard()
+
+
+async def _deliver_promotion_telegram(
+    customer: Customer,
+    promotion: Promotion,
+    message: str,
+    keyboard: object,
+) -> dict:
+    return await send_promotion_telegram(
+        int(customer.telegram_id),
+        message,
+        media_type=promotion.media_type,
+        media_path=media_disk_path(promotion.media_filename),
+        reply_markup=keyboard,  # type: ignore[arg-type]
+    )
 
 
 def _target_customers(db: Session, filters: PromotionBroadcastRequest) -> list[Customer]:
@@ -56,15 +83,7 @@ async def broadcast_promotion(
     promotion = get_promotion(db, promotion_id)
     customers = _target_customers(db, filters)
 
-    message = format_promotion_message(
-        promotion.title,
-        promotion.description,
-        promotion.discount_type,
-        promotion.discount_value,
-        promotion.start_date,
-        promotion.end_date,
-    )
-    keyboard = mini_app_keyboard()
+    message, keyboard = _promotion_message(promotion)
 
     telegram_sent = 0
     telegram_failed = 0
@@ -86,10 +105,8 @@ async def broadcast_promotion(
             db.flush()
 
         try:
-            result = await send_telegram_message(
-                int(customer.telegram_id),
-                message,
-                reply_markup=keyboard,
+            result = await _deliver_promotion_telegram(
+                customer, promotion, message, keyboard
             )
             recipient.telegram_sent = True
             recipient.delivered = True
@@ -129,3 +146,83 @@ async def broadcast_promotion(
         telegram_failed=telegram_failed,
         sms_queued=sms_queued,
     )
+
+
+async def retry_promotion_recipient(
+    db: Session,
+    promotion_id: UUID,
+    recipient_id: UUID,
+) -> PromotionRecipient:
+    """Resend a failed promotion Telegram delivery to one recipient."""
+    promotion = get_promotion(db, promotion_id)
+    recipient = db.scalar(
+        select(PromotionRecipient)
+        .options(selectinload(PromotionRecipient.customer))
+        .where(
+            PromotionRecipient.id == recipient_id,
+            PromotionRecipient.promotion_id == promotion.id,
+        )
+    )
+    if recipient is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Recipient not found for this promotion",
+        )
+
+    if recipient.telegram_sent or recipient.delivered:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This recipient was already delivered successfully",
+        )
+
+    customer = recipient.customer
+    if customer is None or customer.telegram_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Customer has no Telegram ID to retry",
+        )
+    if not customer.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Customer is deactivated",
+        )
+
+    message, keyboard = _promotion_message(promotion)
+
+    try:
+        result = await _deliver_promotion_telegram(
+            customer, promotion, message, keyboard
+        )
+        recipient.telegram_sent = True
+        recipient.delivered = True
+        recipient.delivered_at = datetime.now(timezone.utc)
+        db.add(
+            TelegramLog(
+                customer_id=customer.id,
+                telegram_id=customer.telegram_id,
+                message=message,
+                message_type="promotion",
+                telegram_message_id=result.get("message_id"),
+                delivery_status="sent",
+            )
+        )
+        db.commit()
+        db.refresh(recipient)
+        return recipient
+    except Exception as exc:
+        recipient.telegram_sent = False
+        recipient.delivered = False
+        db.add(
+            TelegramLog(
+                customer_id=customer.id,
+                telegram_id=customer.telegram_id,
+                message=f"{message}\n\n[retry error] {exc}",
+                message_type="promotion",
+                delivery_status="failed",
+            )
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Retry failed: {exc}",
+        ) from exc

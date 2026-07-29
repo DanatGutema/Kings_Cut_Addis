@@ -1,14 +1,12 @@
-const TOKEN_KEY = "kca_access_token";
-const REFRESH_KEY = "kca_refresh_token";
-
 export type Staff = {
   id: string;
   first_name: string;
   last_name?: string | null;
-  email: string;
+  email?: string | null;
   role: "admin" | "staff";
   phone_number: string;
   is_active: boolean;
+  approval_status?: "pending" | "approved" | "rejected";
 };
 
 export type Paginated<T> = {
@@ -18,41 +16,77 @@ export type Paginated<T> = {
   limit: number;
 };
 
-export function getAccessToken() {
-  return localStorage.getItem(TOKEN_KEY);
+/** Single in-flight refresh so parallel 401s don't race cookie rotation. */
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshSession(): Promise<boolean> {
+  try {
+    const res = await fetch("/api/v1/auth/refresh", {
+      method: "POST",
+      credentials: "include",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
-export function setTokens(access: string, refresh: string) {
-  localStorage.setItem(TOKEN_KEY, access);
-  localStorage.setItem(REFRESH_KEY, refresh);
+function ensureRefreshed(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = refreshSession().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
 }
 
-export function clearTokens() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
+async function parseError(res: Response): Promise<string> {
+  let detail = "Request failed";
+  try {
+    const body = await res.json();
+    detail = body.detail || detail;
+  } catch {
+    /* ignore */
+  }
+  return typeof detail === "string" ? detail : JSON.stringify(detail);
 }
 
 async function request<T>(path: string, options: RequestInit = {}, auth = true): Promise<T> {
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(options.headers as Record<string, string> | undefined),
   };
-  if (auth) {
-    const token = getAccessToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
+  if (isFormData) {
+    delete headers["Content-Type"];
   }
 
-  const res = await fetch(path, { ...options, headers });
+  let res = await fetch(path, {
+    ...options,
+    headers,
+    credentials: "include",
+  });
+
+  if (res.status === 401 && auth) {
+    const refreshed = await ensureRefreshed();
+    if (refreshed) {
+      res = await fetch(path, {
+        ...options,
+        headers,
+        credentials: "include",
+      });
+    } else {
+      const detail = await parseError(res);
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.assign("/login");
+      }
+      throw new Error(detail);
+    }
+  }
+
   if (res.status === 204) return undefined as T;
   if (!res.ok) {
-    let detail = "Request failed";
-    try {
-      const body = await res.json();
-      detail = body.detail || detail;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    throw new Error(await parseError(res));
   }
   const type = res.headers.get("content-type") || "";
   if (type.includes("application/json")) return res.json() as Promise<T>;
@@ -60,12 +94,48 @@ async function request<T>(path: string, options: RequestInit = {}, auth = true):
 }
 
 export const api = {
-  login(email: string, password: string) {
-    return request<{ access_token: string; refresh_token: string }>(
+  login(identifier: string, password: string) {
+    const trimmed = identifier.trim();
+    const body = trimmed.includes("@")
+      ? { email: trimmed, password }
+      : { phone_number: trimmed, password };
+    return request<Staff>(
       "/api/v1/auth/login",
-      { method: "POST", body: JSON.stringify({ email, password }) },
+      { method: "POST", body: JSON.stringify(body) },
       false,
     );
+  },
+  registerStaff(body: {
+    first_name: string;
+    last_name?: string;
+    phone_number: string;
+    email?: string;
+    password: string;
+  }) {
+    return request<{ message: string; approval_status: string }>(
+      "/api/v1/staff/register",
+      { method: "POST", body: JSON.stringify(body) },
+      false,
+    );
+  },
+  approveStaff(id: string, role: "admin" | "staff" = "staff") {
+    return request<Staff>(`/api/v1/staff/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ role }),
+    });
+  },
+  rejectStaff(id: string) {
+    return request<Staff>(`/api/v1/staff/${id}/reject`, { method: "POST" });
+  },
+  async logout() {
+    try {
+      await fetch("/api/v1/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      /* ignore network errors on logout */
+    }
   },
   me() {
     return request<Staff>("/api/v1/auth/me");
@@ -124,7 +194,6 @@ export const api = {
         phone_number: string;
         total_visits: number;
         total_spending: number;
-        loyalty_status: string;
         last_visit_date?: string | null;
         is_active: boolean;
       }>
@@ -211,6 +280,8 @@ export const api = {
         scheduled_at: string;
         notes?: string | null;
         status: "pending" | "accepted" | "rejected" | "completed";
+        preferred_barber_id?: string | null;
+        preferred_barber_name?: string | null;
         visit_id?: string | null;
         completed_at?: string | null;
         customer_name?: string | null;
@@ -219,6 +290,18 @@ export const api = {
         service_price?: number | null;
       }>
     >(`/api/v1/appointments?${q}`);
+  },
+  createAppointment(body: {
+    customer_id: string;
+    service_id: string;
+    scheduled_at: string;
+    preferred_barber_id?: string;
+    notes?: string;
+  }) {
+    return request("/api/v1/appointments", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
   },
   acceptAppointment(id: string) {
     return request(`/api/v1/appointments/${id}/accept`, { method: "POST" });
@@ -237,7 +320,6 @@ export const api = {
       phone_number: string;
       total_visits: number;
       total_spending: number;
-      loyalty_status: string;
       is_new_customer: boolean;
     }>("/api/v1/checkin/qr", {
       method: "POST",
@@ -330,17 +412,36 @@ export const api = {
         start_date: string;
         end_date: string;
         is_active: boolean;
+        media_type?: "photo" | "video" | null;
+        media_url?: string | null;
+        recipients_total: number;
+        telegram_sent: number;
+        telegram_failed: number;
       }>
     >("/api/v1/promotions?limit=100");
   },
   createPromotion(body: Record<string, unknown>) {
-    return request("/api/v1/promotions", { method: "POST", body: JSON.stringify(body) });
+    return request<{ id: string }>("/api/v1/promotions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
   },
   updatePromotion(id: string, body: Record<string, unknown>) {
     return request(`/api/v1/promotions/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
     });
+  },
+  uploadPromotionMedia(id: string, file: File) {
+    const form = new FormData();
+    form.append("file", file);
+    return request(`/api/v1/promotions/${id}/media`, {
+      method: "POST",
+      body: form,
+    });
+  },
+  deletePromotionMedia(id: string) {
+    return request(`/api/v1/promotions/${id}/media`, { method: "DELETE" });
   },
   deactivatePromotion(id: string) {
     return request(`/api/v1/promotions/${id}/deactivate`, { method: "POST" });
@@ -352,9 +453,45 @@ export const api = {
     return request<void>(`/api/v1/promotions/${id}`, { method: "DELETE" });
   },
   broadcastPromotion(id: string, body: Record<string, unknown> = {}) {
-    return request(`/api/v1/promotions/${id}/broadcast`, {
+    return request<{
+      promotion_id: string;
+      recipients_total: number;
+      telegram_sent: number;
+      telegram_failed: number;
+      sms_queued: number;
+    }>(`/api/v1/promotions/${id}/broadcast`, {
       method: "POST",
       body: JSON.stringify(body),
+    });
+  },
+  promotionRecipients(id: string) {
+    return request<
+      Paginated<{
+        id: string;
+        promotion_id: string;
+        customer_id: string;
+        telegram_sent: boolean;
+        sms_sent: boolean;
+        delivered: boolean;
+        delivered_at?: string | null;
+        customer_name?: string | null;
+        customer_phone?: string | null;
+      }>
+    >(`/api/v1/promotions/${id}/recipients?limit=200`);
+  },
+  retryPromotionRecipient(promotionId: string, recipientId: string) {
+    return request<{
+      id: string;
+      promotion_id: string;
+      customer_id: string;
+      telegram_sent: boolean;
+      sms_sent: boolean;
+      delivered: boolean;
+      delivered_at?: string | null;
+      customer_name?: string | null;
+      customer_phone?: string | null;
+    }>(`/api/v1/promotions/${promotionId}/recipients/${recipientId}/retry`, {
+      method: "POST",
     });
   },
 
@@ -400,6 +537,44 @@ export const api = {
       return request<void>(`/api/v1/staff/${staffId}`, {
           method: "DELETE",
       });
+  },
+
+  listBarbers(activeOnly = false) {
+    const q = activeOnly ? "?active_only=true" : "";
+    return request<
+      {
+        id: string;
+        first_name: string;
+        last_name?: string | null;
+        phone_number: string;
+        email?: string | null;
+        specialty?: string | null;
+        notes?: string | null;
+        is_active: boolean;
+      }[]
+    >(`/api/v1/barbers${q}`);
+  },
+  createBarber(data: {
+    first_name: string;
+    last_name?: string;
+    phone_number: string;
+    email?: string;
+    specialty?: string;
+    notes?: string;
+  }) {
+    return request(`/api/v1/barbers`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+  deactivateBarber(id: string) {
+    return request(`/api/v1/barbers/${id}/deactivate`, { method: "POST" });
+  },
+  activateBarber(id: string) {
+    return request(`/api/v1/barbers/${id}/activate`, { method: "POST" });
+  },
+  deleteBarber(id: string) {
+    return request<void>(`/api/v1/barbers/${id}`, { method: "DELETE" });
   },
 
   async setStaffPassword(token: string, password: string): Promise<void> {

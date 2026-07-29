@@ -4,6 +4,7 @@ from app.api.v1 import (
     analytics,
     appointments,
     auth,
+    barbers,
     checkin,
     customer_visits,
     customers,
@@ -31,3 +32,4 @@ api_router.include_router(promotions.router)
 api_router.include_router(mini_app.router)
 api_router.include_router(analytics.router)
 api_router.include_router(staff.router)
+api_router.include_router(barbers.router)

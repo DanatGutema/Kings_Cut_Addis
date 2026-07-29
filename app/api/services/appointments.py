@@ -12,21 +12,26 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.services.telegram_notify import mini_app_keyboard, send_telegram_message
 from app.api.services.visits import create_visit
 from app.models.appointment import Appointment
+from app.models.barber import Barber
 from app.models.customer import Customer
 from app.models.service import Service
 from app.models.staff import Staff
-from app.schemas.appointment import AppointmentCreate, AppointmentOut
+from app.schemas.appointment import AppointmentCreate, AppointmentOut, StaffAppointmentCreate
 from app.schemas.visit import VisitCreate, VisitServiceItemCreate
 
 
 def _to_out(appointment: Appointment) -> AppointmentOut:
     customer = appointment.customer
     service = appointment.service
+    barber = appointment.preferred_barber
     customer_name = None
     customer_phone = None
     if customer is not None:
         customer_name = f"{customer.first_name} {customer.last_name or ''}".strip()
         customer_phone = customer.phone_number
+    barber_name = None
+    if barber is not None:
+        barber_name = f"{barber.first_name} {barber.last_name or ''}".strip()
     return AppointmentOut(
         id=appointment.id,
         customer_id=appointment.customer_id,
@@ -34,6 +39,7 @@ def _to_out(appointment: Appointment) -> AppointmentOut:
         scheduled_at=appointment.scheduled_at,
         notes=appointment.notes,
         status=appointment.status,
+        preferred_barber_id=appointment.preferred_barber_id,
         handled_by_staff_id=appointment.handled_by_staff_id,
         visit_id=appointment.visit_id,
         responded_at=appointment.responded_at,
@@ -44,6 +50,7 @@ def _to_out(appointment: Appointment) -> AppointmentOut:
         customer_phone=customer_phone,
         service_name=service.name if service else None,
         service_price=service.price if service else None,
+        preferred_barber_name=barber_name,
     )
 
 
@@ -53,6 +60,7 @@ def _load_appointment(db: Session, appointment_id: UUID) -> Appointment:
         .options(
             selectinload(Appointment.customer),
             selectinload(Appointment.service),
+            selectinload(Appointment.preferred_barber),
         )
         .where(Appointment.id == appointment_id)
     )
@@ -100,12 +108,72 @@ def create_appointment(
             detail="Appointment time must be in the future",
         )
 
+    preferred_barber_id = None
+    if data.preferred_barber_id is not None:
+        barber = db.get(Barber, data.preferred_barber_id)
+        if barber is None or not barber.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Barber not found or inactive",
+            )
+        preferred_barber_id = barber.id
+
     appointment = Appointment(
         customer_id=customer.id,
         service_id=service.id,
         scheduled_at=scheduled_at,
+        preferred_barber_id=preferred_barber_id,
         notes=data.notes,
         status="pending",
+    )
+    db.add(appointment)
+    db.commit()
+    return _to_out(_load_appointment(db, appointment.id))
+
+
+def create_staff_appointment(
+    db: Session,
+    staff: Staff,
+    data: StaffAppointmentCreate,
+) -> AppointmentOut:
+    """Log an appointment taken by staff (phone / walk-in). Starts as accepted."""
+    customer = db.get(Customer, data.customer_id)
+    if customer is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    if not customer.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Customer is deactivated")
+
+    service = db.get(Service, data.service_id)
+    if service is None or not service.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Service not found or inactive",
+        )
+
+    if data.scheduled_at.tzinfo is not None:
+        scheduled_at = data.scheduled_at.astimezone().replace(tzinfo=None)
+    else:
+        scheduled_at = data.scheduled_at
+
+    preferred_barber_id = None
+    if data.preferred_barber_id is not None:
+        barber = db.get(Barber, data.preferred_barber_id)
+        if barber is None or not barber.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Barber not found or inactive",
+            )
+        preferred_barber_id = barber.id
+
+    appointment = Appointment(
+        customer_id=customer.id,
+        service_id=service.id,
+        scheduled_at=scheduled_at,
+        preferred_barber_id=preferred_barber_id,
+        notes=data.notes,
+        status="accepted",
+        handled_by_staff_id=staff.id,
+        responded_at=datetime.utcnow(),
     )
     db.add(appointment)
     db.commit()
@@ -132,6 +200,7 @@ def list_appointments(
         .options(
             selectinload(Appointment.customer),
             selectinload(Appointment.service),
+            selectinload(Appointment.preferred_barber),
         )
         .order_by(Appointment.created_at.desc(), Appointment.scheduled_at.desc())
     )

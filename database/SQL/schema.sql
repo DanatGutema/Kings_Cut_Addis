@@ -13,13 +13,6 @@ CREATE TABLE customers (
     qr_token UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     total_visits INTEGER NOT NULL DEFAULT 0,
     total_spending DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
-    -- loyalty_status VARCHAR(50) NOT NULL DEFAULT 'bronze',
-    loyalty_status VARCHAR(20)
-    CHECK (
-        loyalty_status IN
-        ('bronze','silver','gold','platinum')
-    )
-    DEFAULT 'bronze',
     joined_date DATE NOT NULL DEFAULT CURRENT_DATE,
     last_visit_date DATE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -243,6 +236,11 @@ CREATE TABLE promotions (
     end_date DATE NOT NULL,
 
     is_active BOOLEAN DEFAULT TRUE,
+
+    media_type VARCHAR(20)
+        CHECK (media_type IS NULL OR media_type IN ('photo','video')),
+
+    media_filename VARCHAR(255),
 
     created_by UUID NOT NULL,
 

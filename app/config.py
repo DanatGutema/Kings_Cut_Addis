@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -6,10 +7,22 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
     SECRET_KEY: str = "change-me-in-production"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours — workday session
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+    # Staff dashboard cookies (HttpOnly). Secure=True required in production HTTPS.
+    COOKIE_SECURE: bool = False
+    COOKIE_SAMESITE: str = "lax"
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_MINI_APP_URL: str = ""
+    # Local (or server) folder for promotion photos/videos
+    UPLOAD_DIR: str = "uploads"
+
+    @field_validator("TELEGRAM_MINI_APP_URL", mode="before")
+    @classmethod
+    def strip_mini_app_url(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().rstrip("/")
+        return value
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://localhost:5174",

@@ -17,15 +17,15 @@ export default function AnalyticsPage() {
   const [byService, setByService] = useState<
     { service_name: string; total_revenue: number; visit_count: number }[]
   >([]);
-  const [top, setTop] = useState<
-    {
-      customer_id: string;
-      first_name: string;
-      last_name?: string | null;
-      total_visits: number;
-      total_spending: number;
-    }[]
-  >([]);
+  type TopCustomer = {
+    customer_id: string;
+    first_name: string;
+    last_name?: string | null;
+    total_visits: number;
+    total_spending: number;
+  };
+  const [topBySpending, setTopBySpending] = useState<TopCustomer[]>([]);
+  const [topByVisits, setTopByVisits] = useState<TopCustomer[]>([]);
 
   const navigate = useNavigate();
   const [loyalty, setLoyalty] = useState<{
@@ -38,10 +38,17 @@ export default function AnalyticsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.revenueByService(), api.topCustomers("spending"), api.loyaltyMetrics(), api.dashboard()])
-      .then(([services, customers, loyaltyMetrics, m]) => {
+    Promise.all([
+      api.revenueByService(),
+      api.topCustomers("spending"),
+      api.topCustomers("visits"),
+      api.loyaltyMetrics(),
+      api.dashboard(),
+    ])
+      .then(([services, bySpending, byVisits, loyaltyMetrics, m]) => {
         setByService(services);
-        setTop(customers);
+        setTopBySpending(bySpending);
+        setTopByVisits(byVisits);
         setLoyalty(loyaltyMetrics);
         setMetrics(m);
       })
@@ -137,7 +144,33 @@ export default function AnalyticsPage() {
               </tr>
             </thead>
             <tbody>
-              {top.map((c) => (
+              {topBySpending.map((c) => (
+                <tr key={c.customer_id}>
+                  <td>
+                    {c.first_name} {c.last_name || ""}
+                  </td>
+                  <td>{c.total_visits}</td>
+                  <td>{Number(c.total_spending).toLocaleString()} ETB</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>Top customers by visits</h2>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Visits</th>
+                <th>Spending</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topByVisits.map((c) => (
                 <tr key={c.customer_id}>
                   <td>
                     {c.first_name} {c.last_name || ""}

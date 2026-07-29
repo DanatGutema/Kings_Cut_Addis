@@ -8,7 +8,6 @@ type CustomerRow = {
   phone_number: string;
   total_visits: number;
   total_spending: number;
-  loyalty_status: string;
   last_visit_date?: string | null;
   is_active: boolean;
 };
@@ -116,7 +115,7 @@ export default function CustomersPage() {
       <header className="page-head">
         <div>
           <h1>Customers</h1>
-          <p className="muted">Search directory and register walk-ins</p>
+          <p className="muted">Search customers, register walk-ins, and view visit history</p>
         </div>
       </header>
 
@@ -149,7 +148,6 @@ export default function CustomersPage() {
               <th>Phone</th>
               <th>Visits</th>
               <th>Spending</th>
-              <th>Tier</th>
               <th>Last visit</th>
               <th>Status</th>
               <th>Actions</th>
@@ -164,7 +162,6 @@ export default function CustomersPage() {
                 <td>{c.phone_number}</td>
                 <td>{c.total_visits}</td>
                 <td>{Number(c.total_spending).toLocaleString()}</td>
-                <td>{c.loyalty_status}</td>
                 <td>{c.last_visit_date || "—"}</td>
                 <td>
                   <span className={c.is_active ? "ok-text" : "error-text"}>

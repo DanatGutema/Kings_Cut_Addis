@@ -19,11 +19,17 @@ class Promotion(Base):
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     is_active = Column(Boolean, default=True)
+    media_type = Column(String(20), nullable=True)
+    media_filename = Column(String(255), nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("staff.id"), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
     __table_args__ = (
         CheckConstraint("discount_type IN ('percentage','fixed')", name="check_discount_type"),
+        CheckConstraint(
+            "media_type IS NULL OR media_type IN ('photo','video')",
+            name="check_promotion_media_type",
+        ),
     )
 
     created_by_staff = relationship("Staff", back_populates="promotions")

@@ -37,6 +37,9 @@ htmlcov/
 # Logs
 *.log
 
+# Local media uploads (promotion photos/videos)
+uploads/
+
 # Node (future frontends)
 node_modules/
 admin-dashboard/dist/

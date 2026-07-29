@@ -4,12 +4,14 @@ import {
   authWithTelegram,
   createAppointment,
   fetchAppointments,
+  fetchBarbers,
   fetchLoyalty,
   fetchPromotions,
   fetchQr,
   fetchRewards,
   fetchServices,
   type Appointment,
+  type Barber,
   type Customer,
   type LoyaltyProgress,
   type Promotion,
@@ -38,12 +40,15 @@ export default function App() {
   const [token, setToken] = useState<string | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [qr, setQr] = useState<QrPayload | null>(null);
+  const [tokenCopied, setTokenCopied] = useState(false);
   const [loyalty, setLoyalty] = useState<LoyaltyProgress | null>(null);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [serviceId, setServiceId] = useState("");
+  const [barberId, setBarberId] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [notes, setNotes] = useState("");
   const [bookMessage, setBookMessage] = useState<string | null>(null);
@@ -52,14 +57,31 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const tg = bootstrapTelegram();
-    const initData = tg?.initData || "";
-
     async function boot() {
       try {
+        // Telegram sometimes needs a tick after the WebApp script injects hash data.
+        let tg = bootstrapTelegram();
+        let initData = tg?.initData || "";
         if (!initData) {
+          await new Promise((r) => setTimeout(r, 150));
+          tg = bootstrapTelegram();
+          initData = tg?.initData || "";
+        }
+
+        if (!initData) {
+          const hasWebApp = Boolean(window.Telegram?.WebApp);
+          const hasHash = window.location.hash.includes("tgWebAppData");
           setError(
-            "Open this Mini App from the Kings Cut Telegram bot. Direct browser open has no Telegram auth.",
+            [
+              "Telegram login data is missing (initData empty).",
+              hasWebApp
+                ? "WebApp object is present, but auth payload was lost."
+                : "Telegram WebApp object was not found.",
+              hasHash
+                ? "URL hash still has tgWebAppData — try Close and reopen the app."
+                : "URL hash has no tgWebAppData (often caused by free ngrok interstitial).",
+              "Fix: use Cloudflare Tunnel instead of free ngrok, update TELEGRAM_MINI_APP_URL + BotFather, restart bot, open via keyboard button “Open Kings Cut App”.",
+            ].join(" "),
           );
           setLoading(false);
           return;
@@ -67,13 +89,14 @@ export default function App() {
         const auth = await authWithTelegram(initData);
         setToken(auth.access_token);
         setCustomer(auth.customer);
-        const [qrData, loyaltyData, rewardsData, promosData, servicesData, apptData] =
+        const [qrData, loyaltyData, rewardsData, promosData, servicesData, barbersData, apptData] =
           await Promise.all([
             fetchQr(auth.access_token),
             fetchLoyalty(auth.access_token),
             fetchRewards(auth.access_token),
             fetchPromotions(auth.access_token),
             fetchServices(auth.access_token),
+            fetchBarbers(auth.access_token),
             fetchAppointments(auth.access_token),
           ]);
         setQr(qrData);
@@ -81,6 +104,7 @@ export default function App() {
         setRewards(rewardsData);
         setPromos(promosData);
         setServices(servicesData);
+        setBarbers(barbersData);
         setAppointments(apptData);
         if (servicesData[0]) setServiceId(servicesData[0].id);
         tg?.HapticFeedback?.impactOccurred("light");
@@ -108,6 +132,7 @@ export default function App() {
       await createAppointment(token, {
         service_id: serviceId,
         scheduled_at: toIsoLocal(scheduledAt),
+        preferred_barber_id: barberId || undefined,
         notes: notes.trim() || undefined,
       });
       setNotes("");
@@ -168,6 +193,26 @@ export default function App() {
             <br />
             {qr?.phone_number}
           </p>
+          {qr?.qr_token && (
+            <div className="qr-token-row">
+              <code className="qr-token-text">{qr.qr_token}</code>
+              <button
+                type="button"
+                className="qr-copy-btn"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(qr.qr_token);
+                    setTokenCopied(true);
+                    window.setTimeout(() => setTokenCopied(false), 2000);
+                  } catch {
+                    /* clipboard may be blocked */
+                  }
+                }}
+              >
+                {tokenCopied ? "Copied" : "Copy"}
+              </button>
+            </div>
+          )}
         </section>
       )}
 
@@ -181,6 +226,18 @@ export default function App() {
                 {services.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} — {Number(s.price).toLocaleString()} ETB
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Barber (optional)
+              <select value={barberId} onChange={(e) => setBarberId(e.target.value)}>
+                <option value="">Any available</option>
+                {barbers.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.first_name} {b.last_name || ""}
+                    {b.specialty ? ` — ${b.specialty}` : ""}
                   </option>
                 ))}
               </select>
@@ -212,6 +269,9 @@ export default function App() {
               <article className="card-item" key={a.id}>
                 <h3>{a.service_name || "Service"}</h3>
                 <p>{new Date(a.scheduled_at).toLocaleString()}</p>
+                {a.preferred_barber_name && (
+                  <p className="qr-meta">Barber: {a.preferred_barber_name}</p>
+                )}
                 <span className={`badge ${a.status}`}>{a.status}</span>
               </article>
             ))}
@@ -232,10 +292,6 @@ export default function App() {
               <div className="stat">
                 <strong>{spending}</strong>
                 <span>ETB</span>
-              </div>
-              <div className="stat">
-                <strong>{customer.loyalty_status}</strong>
-                <span>Tier</span>
               </div>
             </div>
             {(loyalty?.rules || []).map((rule) => {
@@ -295,6 +351,21 @@ export default function App() {
           <div className="list">
             {promos.map((promo) => (
               <article className="card-item" key={promo.id}>
+                {promo.media_url && (
+                  promo.media_type === "video" ? (
+                    <video
+                      src={`${import.meta.env.VITE_API_BASE_URL || ""}${promo.media_url}`}
+                      controls
+                      style={{ width: "100%", borderRadius: "0.75rem", marginBottom: "0.65rem" }}
+                    />
+                  ) : (
+                    <img
+                      src={`${import.meta.env.VITE_API_BASE_URL || ""}${promo.media_url}`}
+                      alt=""
+                      style={{ width: "100%", borderRadius: "0.75rem", marginBottom: "0.65rem" }}
+                    />
+                  )
+                )}
                 <h3>{promo.title}</h3>
                 <p>{promo.description || "Limited-time shop offer"}</p>
                 <p style={{ marginTop: "0.4rem" }}>

@@ -15,9 +15,10 @@ class Staff(Base):
     first_name = Column(String(255), nullable=False)
     last_name = Column(String(255), nullable=True)
     phone_number = Column(String(15), nullable=False, unique=True)
-    email = Column(String(255), nullable=False, unique=True)
+    email = Column(String(255), nullable=True, unique=True)
     password_hash = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False, default="staff")
+    approval_status = Column(String(20), nullable=False, default="approved")
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -25,6 +26,10 @@ class Staff(Base):
 
     __table_args__ = (
         CheckConstraint("role IN ('admin','staff')", name="check_staff_role"),
+        CheckConstraint(
+            "approval_status IN ('pending','approved','rejected')",
+            name="check_staff_approval_status",
+        ),
     )
 
     visits = relationship("Visit", back_populates="staff")

@@ -12,6 +12,21 @@ type Promo = {
   start_date: string;
   end_date: string;
   is_active: boolean;
+  media_type?: "photo" | "video" | null;
+  media_url?: string | null;
+  recipients_total: number;
+  telegram_sent: number;
+  telegram_failed: number;
+};
+
+type Recipient = {
+  id: string;
+  customer_id: string;
+  telegram_sent: boolean;
+  delivered: boolean;
+  delivered_at?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
 };
 
 type PromoForm = {
@@ -45,6 +60,11 @@ export default function PromotionsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<PromoForm>(emptyForm);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
+  const [recipients, setRecipients] = useState<Recipient[]>([]);
+  const [recipientsLoading, setRecipientsLoading] = useState(false);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
 
   async function load() {
     const data = await api.promotions();
@@ -68,6 +88,7 @@ export default function PromotionsPage() {
       start_date: promo.start_date.slice(0, 10),
       end_date: promo.end_date.slice(0, 10),
     });
+    setMediaFile(null);
     setError(null);
     setMessage(null);
   }
@@ -75,6 +96,7 @@ export default function PromotionsPage() {
   function cancelEdit() {
     setEditingId(null);
     setForm(emptyForm());
+    setMediaFile(null);
   }
 
   function buildPayload(isActive = true): Record<string, unknown> {
@@ -94,19 +116,34 @@ export default function PromotionsPage() {
     setError(null);
     setMessage(null);
     try {
+      let promoId = editingId;
       if (editingId) {
         const existing = rows.find((p) => p.id === editingId);
         await api.updatePromotion(editingId, buildPayload(existing?.is_active ?? true));
-        setMessage("Promotion updated");
-        cancelEdit();
       } else {
-        await api.createPromotion(buildPayload(true));
-        setMessage("Promotion created");
-        setForm(emptyForm());
+        const created = await api.createPromotion(buildPayload(true));
+        promoId = created.id;
       }
+      if (mediaFile && promoId) {
+        await api.uploadPromotionMedia(promoId, mediaFile);
+      }
+      setMessage(editingId ? "Promotion updated" : "Promotion created");
+      cancelEdit();
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : editingId ? "Update failed" : "Create failed");
+    }
+  }
+
+  async function onRemoveMedia(id: string) {
+    setError(null);
+    setMessage(null);
+    try {
+      await api.deletePromotionMedia(id);
+      setMessage("Media removed");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Remove media failed");
     }
   }
 
@@ -150,6 +187,10 @@ export default function PromotionsPage() {
       await api.deletePromotion(promo.id);
       setMessage("Promotion deleted");
       if (editingId === promo.id) cancelEdit();
+      if (selectedPromo?.id === promo.id) {
+        setSelectedPromo(null);
+        setRecipients([]);
+      }
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
@@ -160,16 +201,61 @@ export default function PromotionsPage() {
     setError(null);
     setMessage(null);
     try {
-      const res = (await api.broadcastPromotion(id, {})) as {
-        telegram_sent: number;
-        telegram_failed: number;
-        recipients_total: number;
-      };
+      const res = await api.broadcastPromotion(id, {});
       setMessage(
         `Broadcast done: ${res.telegram_sent} sent / ${res.telegram_failed} failed of ${res.recipients_total}`,
       );
+      const data = await api.promotions();
+      setRows(data.items);
+      if (selectedPromo?.id === id) {
+        const updated = data.items.find((p) => p.id === id);
+        if (updated) await openDelivery(updated);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Broadcast failed");
+    }
+  }
+
+  async function openDelivery(promo: Promo) {
+    setSelectedPromo(promo);
+    setRecipientsLoading(true);
+    setError(null);
+    try {
+      const data = await api.promotionRecipients(promo.id);
+      setRecipients(data.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load recipients");
+      setRecipients([]);
+    } finally {
+      setRecipientsLoading(false);
+    }
+  }
+
+  async function onRetryRecipient(recipient: Recipient) {
+    if (!selectedPromo) return;
+    setError(null);
+    setMessage(null);
+    setRetryingId(recipient.id);
+    try {
+      await api.retryPromotionRecipient(selectedPromo.id, recipient.id);
+      setMessage(`Retry sent to ${recipient.customer_name || "customer"}`);
+      const data = await api.promotions();
+      setRows(data.items);
+      const updated = data.items.find((p) => p.id === selectedPromo.id);
+      if (updated) await openDelivery(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Retry failed");
+      // Refresh so status stays accurate if Telegram failed again
+      try {
+        const data = await api.promotions();
+        setRows(data.items);
+        const updated = data.items.find((p) => p.id === selectedPromo.id);
+        if (updated) await openDelivery(updated);
+      } catch {
+        /* ignore refresh errors */
+      }
+    } finally {
+      setRetryingId(null);
     }
   }
 
@@ -178,7 +264,7 @@ export default function PromotionsPage() {
       <header className="page-head">
         <div>
           <h1>Promotions</h1>
-          <p className="muted">Create offers and broadcast via Telegram (admin)</p>
+          <p className="muted">Create offers and broadcast via Telegram</p>
         </div>
       </header>
 
@@ -238,6 +324,27 @@ export default function PromotionsPage() {
             />
           </label>
         </div>
+        <label>
+          Photo or video (optional)
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,video/mp4"
+            onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
+          />
+        </label>
+        {mediaFile && (
+          <p className="muted">Selected: {mediaFile.name}</p>
+        )}
+        {editingId && rows.find((p) => p.id === editingId)?.media_url && (
+          <div className="toolbar">
+            <p className="muted" style={{ margin: 0 }}>
+              Current media: {rows.find((p) => p.id === editingId)?.media_type}
+            </p>
+            <button type="button" className="ghost-btn" onClick={() => onRemoveMedia(editingId)}>
+              Remove media
+            </button>
+          </div>
+        )}
         <div className="toolbar">
           <button type="submit">{editingId ? "Save changes" : "Create"}</button>
           {editingId && (
@@ -255,9 +362,11 @@ export default function PromotionsPage() {
         <table>
           <thead>
             <tr>
+              <th>Media</th>
               <th>Title</th>
               <th>Discount</th>
               <th>Dates</th>
+              <th>Delivery</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -265,6 +374,25 @@ export default function PromotionsPage() {
           <tbody>
             {rows.map((p) => (
               <tr key={p.id}>
+                <td>
+                  {p.media_url ? (
+                    p.media_type === "video" ? (
+                      <video
+                        src={p.media_url}
+                        style={{ width: 64, height: 48, objectFit: "cover", borderRadius: 6 }}
+                        muted
+                      />
+                    ) : (
+                      <img
+                        src={p.media_url}
+                        alt=""
+                        style={{ width: 64, height: 48, objectFit: "cover", borderRadius: 6 }}
+                      />
+                    )
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
                 <td>{p.title}</td>
                 <td>
                   {p.discount_type === "percentage"
@@ -273,6 +401,22 @@ export default function PromotionsPage() {
                 </td>
                 <td>
                   {p.start_date} → {p.end_date}
+                </td>
+                <td>
+                  {p.recipients_total > 0 ? (
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      onClick={() => openDelivery(p)}
+                      title="View recipient delivery details"
+                    >
+                      <span className="ok-text">{p.telegram_sent} sent</span>
+                      {" / "}
+                      <span className="error-text">{p.telegram_failed} failed</span>
+                    </button>
+                  ) : (
+                    <span className="muted">Not broadcast</span>
+                  )}
                 </td>
                 <td>
                   <span className={p.is_active ? "ok-text" : "error-text"}>
@@ -322,6 +466,90 @@ export default function PromotionsPage() {
           </tbody>
         </table>
       </div>
+
+      {selectedPromo && (
+        <div className="panel" style={{ marginTop: "1rem" }}>
+          <div className="page-head" style={{ marginBottom: "0.75rem" }}>
+            <div>
+              <h2>Delivery — {selectedPromo.title}</h2>
+              <p className="muted">
+                {selectedPromo.telegram_sent} sent · {selectedPromo.telegram_failed} failed ·{" "}
+                {selectedPromo.recipients_total} total
+              </p>
+            </div>
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => {
+                setSelectedPromo(null);
+                setRecipients([]);
+              }}
+            >
+              Close
+            </button>
+          </div>
+
+          {recipientsLoading ? (
+            <p className="muted">Loading recipients…</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Customer</th>
+                    <th>Phone</th>
+                    <th>Delivery</th>
+                    <th>Delivered at</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recipients.map((r) => {
+                    const ok = r.telegram_sent || r.delivered;
+                    return (
+                      <tr key={r.id}>
+                        <td>{r.customer_name || r.customer_id.slice(0, 8) + "…"}</td>
+                        <td>{r.customer_phone || "—"}</td>
+                        <td>
+                          {ok ? (
+                            <span className="ok-text">Delivered</span>
+                          ) : (
+                            <span className="error-text">Failed</span>
+                          )}
+                        </td>
+                        <td>
+                          {r.delivered_at
+                            ? new Date(r.delivered_at).toLocaleString()
+                            : "—"}
+                        </td>
+                        <td>
+                          {!ok && (
+                            <button
+                              type="button"
+                              className="ghost-btn"
+                              disabled={retryingId === r.id}
+                              onClick={() => void onRetryRecipient(r)}
+                            >
+                              {retryingId === r.id ? "Retrying…" : "Retry"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!recipients.length && (
+                    <tr>
+                      <td colSpan={5} className="muted">
+                        No recipients for this promotion.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

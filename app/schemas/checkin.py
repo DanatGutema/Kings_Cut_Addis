@@ -23,5 +23,4 @@ class CheckInResponse(BaseModel):
     phone_number: str
     total_visits: int
     total_spending: float
-    loyalty_status: str
     is_new_customer: bool

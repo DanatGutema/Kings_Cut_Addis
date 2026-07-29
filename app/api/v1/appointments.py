@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import CurrentStaff, DbSession
 from app.api.services import appointments as appointment_service
-from app.schemas.appointment import AppointmentOut
+from app.schemas.appointment import AppointmentOut, StaffAppointmentCreate
 from app.schemas.pagination import PaginatedResponse
 
 router = APIRouter(prefix="/appointments", tags=["appointments"])
@@ -30,6 +30,16 @@ def list_appointments(
         status_filter=status_filter,
     )
     return PaginatedResponse(items=items, total=total, skip=skip, limit=limit)
+
+
+@router.post("", response_model=AppointmentOut, status_code=status.HTTP_201_CREATED)
+def create_appointment(
+    body: StaffAppointmentCreate,
+    db: DbSession,
+    staff: CurrentStaff,
+) -> AppointmentOut:
+    """Staff log for phone / walk-in appointments (created as accepted)."""
+    return appointment_service.create_staff_appointment(db, staff, body)
 
 
 @router.post("/{appointment_id}/accept", response_model=AppointmentOut)

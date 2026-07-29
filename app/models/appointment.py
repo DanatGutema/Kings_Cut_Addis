@@ -17,6 +17,7 @@ class Appointment(Base):
     scheduled_at = Column(DateTime, nullable=False)
     notes = Column(Text, nullable=True)
     status = Column(String(30), nullable=False, default="pending")
+    preferred_barber_id = Column(UUID(as_uuid=True), ForeignKey("barbers.id"), nullable=True)
     handled_by_staff_id = Column(UUID(as_uuid=True), ForeignKey("staff.id"), nullable=True)
     visit_id = Column(UUID(as_uuid=True), ForeignKey("visits.id"), nullable=True)
     responded_at = Column(DateTime, nullable=True)
@@ -33,5 +34,6 @@ class Appointment(Base):
 
     customer = relationship("Customer", back_populates="appointments")
     service = relationship("Service", back_populates="appointments")
+    preferred_barber = relationship("Barber", back_populates="appointments")
     handled_by_staff = relationship("Staff", foreign_keys=[handled_by_staff_id])
     visit = relationship("Visit", foreign_keys=[visit_id])

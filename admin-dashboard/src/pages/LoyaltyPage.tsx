@@ -184,7 +184,7 @@ export default function LoyaltyPage() {
       <header className="page-head">
         <div>
           <h1>Loyalty rules</h1>
-          <p className="muted">Visit / spend thresholds and reward configuration (admin)</p>
+          <p className="muted">Visit / spend thresholds and reward configuration</p>
         </div>
       </header>
 
@@ -245,6 +245,7 @@ export default function LoyaltyPage() {
             Expiry days
             <input
               type="number"
+              min="1"
               value={form.expiry_days}
               onChange={(e) => setForm({ ...form, expiry_days: e.target.value })}
             />
@@ -253,6 +254,7 @@ export default function LoyaltyPage() {
             Period days
             <input
               type="number"
+              
               value={form.evaluation_period_days}
               onChange={(e) => setForm({ ...form, evaluation_period_days: e.target.value })}
             />

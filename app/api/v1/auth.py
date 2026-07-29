@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Request, status
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Request, Response, status
+from sqlalchemy import or_, select
 
+from app.api.core.auth_cookies import REFRESH_COOKIE, clear_auth_cookies, set_auth_cookies
 from app.api.core.security import (
     create_access_token,
     create_refresh_token_value,
@@ -13,10 +14,29 @@ from app.api.core.security import (
 from app.api.deps import CurrentStaff, DbSession
 from app.models.refresh_token import RefreshToken
 from app.models.staff import Staff
-from app.schemas.auth import RefreshTokenRequest, StaffLogin, TokenResponse
+from app.schemas.auth import StaffLogin, TokenResponse
 from app.schemas.staff import StaffOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _ensure_staff_can_authenticate(staff: Staff) -> None:
+    status_value = getattr(staff, "approval_status", "approved") or "approved"
+    if status_value == "pending":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your registration is pending admin approval",
+        )
+    if status_value == "rejected":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your registration was rejected. Contact the shop owner.",
+        )
+    if not staff.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated",
+        )
 
 
 def _issue_tokens(db: DbSession, staff: Staff, request: Request) -> TokenResponse:
@@ -39,29 +59,57 @@ def _issue_tokens(db: DbSession, staff: Staff, request: Request) -> TokenRespons
     return TokenResponse(access_token=access_token, refresh_token=refresh_value)
 
 
-@router.post("/login", response_model=TokenResponse)
-def staff_login(body: StaffLogin, db: DbSession, request: Request) -> TokenResponse:
-    staff = db.scalar(select(Staff).where(Staff.email == body.email))
+@router.post("/login", response_model=StaffOut)
+def staff_login(
+    body: StaffLogin,
+    db: DbSession,
+    request: Request,
+    response: Response,
+) -> Staff:
+    try:
+        identifier = body.identifier()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    staff = db.scalar(
+        select(Staff).where(
+            or_(Staff.email == identifier, Staff.phone_number == identifier)
+        )
+    )
     if staff is None or not verify_password(body.password, staff.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect email/phone or password",
         )
-    if not staff.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is deactivated",
-        )
-    return _issue_tokens(db, staff, request)
+    _ensure_staff_can_authenticate(staff)
+    tokens = _issue_tokens(db, staff, request)
+    set_auth_cookies(
+        response,
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+    )
+    db.refresh(staff)
+    return staff
 
 
-@router.post("/refresh", response_model=TokenResponse)
+@router.post("/refresh", response_model=StaffOut)
 def refresh_access_token(
-    body: RefreshTokenRequest,
     db: DbSession,
     request: Request,
-) -> TokenResponse:
-    token_hash = hash_token(body.refresh_token)
+    response: Response,
+) -> Staff:
+    refresh_value = request.cookies.get(REFRESH_COOKIE)
+    if not refresh_value:
+        clear_auth_cookies(response)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
+    token_hash = hash_token(refresh_value)
     record = db.scalar(
         select(RefreshToken).where(
             RefreshToken.token_hash == token_hash,
@@ -70,6 +118,7 @@ def refresh_access_token(
         )
     )
     if record is None:
+        clear_auth_cookies(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",
@@ -83,40 +132,60 @@ def refresh_access_token(
         record.revoked = True
         record.revoked_at = now
         db.commit()
+        clear_auth_cookies(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token expired",
         )
 
     staff = db.get(Staff, record.staff_id)
-    if staff is None or not staff.is_active:
+    if staff is None:
+        clear_auth_cookies(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Staff account not found or inactive",
         )
+    try:
+        _ensure_staff_can_authenticate(staff)
+    except HTTPException:
+        clear_auth_cookies(response)
+        raise
 
     record.revoked = True
     record.revoked_at = now
     record.last_used_at = now
-    return _issue_tokens(db, staff, request)
+    tokens = _issue_tokens(db, staff, request)
+    set_auth_cookies(
+        response,
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+    )
+    db.refresh(staff)
+    return staff
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def staff_logout(body: RefreshTokenRequest, db: DbSession) -> None:
-    token_hash = hash_token(body.refresh_token)
-    record = db.scalar(
-        select(RefreshToken).where(
-            RefreshToken.token_hash == token_hash,
-            RefreshToken.revoked.is_(False),
+def staff_logout(
+    request: Request,
+    response: Response,
+    db: DbSession,
+) -> None:
+    refresh_value = request.cookies.get(REFRESH_COOKIE)
+    if refresh_value:
+        token_hash = hash_token(refresh_value)
+        record = db.scalar(
+            select(RefreshToken).where(
+                RefreshToken.token_hash == token_hash,
+                RefreshToken.revoked.is_(False),
+            )
         )
-    )
-    if record is None:
-        return
+        if record is not None:
+            now = datetime.now(timezone.utc)
+            record.revoked = True
+            record.revoked_at = now
+            db.commit()
 
-    now = datetime.now(timezone.utc)
-    record.revoked = True
-    record.revoked_at = now
-    db.commit()
+    clear_auth_cookies(response)
 
 
 @router.get("/me", response_model=StaffOut)

@@ -7,7 +7,6 @@ export type Customer = {
   phone_number: string;
   total_visits: number;
   total_spending: number | string;
-  loyalty_status: string;
   qr_token: string;
 };
 
@@ -34,7 +33,6 @@ export type LoyaltyProgress = {
   customer_id: string;
   total_visits: number;
   total_spending: number | string;
-  loyalty_status: string;
   rules: RuleProgress[];
 };
 
@@ -56,6 +54,8 @@ export type Promotion = {
   discount_value: number | string;
   start_date: string;
   end_date: string;
+  media_type?: "photo" | "video" | null;
+  media_url?: string | null;
 };
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
@@ -122,10 +122,23 @@ export type Appointment = {
   status: "pending" | "accepted" | "rejected" | "completed";
   service_name?: string | null;
   service_price?: number | string | null;
+  preferred_barber_id?: string | null;
+  preferred_barber_name?: string | null;
+};
+
+export type Barber = {
+  id: string;
+  first_name: string;
+  last_name?: string | null;
+  specialty?: string | null;
 };
 
 export function fetchServices(token: string) {
   return request<Service[]>("/api/v1/mini-app/services", {}, token);
+}
+
+export function fetchBarbers(token: string) {
+  return request<Barber[]>("/api/v1/mini-app/barbers", {}, token);
 }
 
 export function fetchAppointments(token: string) {
@@ -134,7 +147,12 @@ export function fetchAppointments(token: string) {
 
 export function createAppointment(
   token: string,
-  body: { service_id: string; scheduled_at: string; notes?: string },
+  body: {
+    service_id: string;
+    scheduled_at: string;
+    preferred_barber_id?: string;
+    notes?: string;
+  },
 ) {
   return request<Appointment>("/api/v1/mini-app/appointments", {
     method: "POST",

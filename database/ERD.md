@@ -13,7 +13,6 @@ erDiagram
         uuid qr_token UK
         int total_visits
         decimal total_spending
-        varchar loyalty_status
     }
 
     staff {

@@ -53,3 +53,512 @@ Admin gate, edit form, action buttons
 admin-dashboard/src/layout/AppLayout.tsx
 Hide Loyalty nav for non-admins
 Existing rewards keep their stored amounts; only future reward issuance uses the updated rule.
+
+
+
+
+
+
+
+
+I'll check the customer API for activate/deactivate support, then add those actions to the customers page.
+
+Adding activate/deactivate endpoints and matching the UI to the staff pattern (Delete only on inactive).
+
+Frontend is updated; finishing the backend schema and activate/deactivate endpoints.
+
+Activate/deactivate is in place for customers, matching the other pages.
+
+Behavior
+Active: Deactivate
+Inactive: Activate + Delete
+Delete only after deactivate, and only if there’s no related business data
+Status column shows Active / Inactive
+Where it changed
+File	Change
+app/api/v1/customers.py
+POST .../activate, POST .../deactivate; delete requires inactive
+app/schemas/customer.py
+is_active on customer list summary
+admin-dashboard/src/api/client.ts
+activateCustomer / deactivateCustomer
+admin-dashboard/src/pages/CustomersPage.tsx
+Status + action buttons
+Restart the API if it’s already running.
+
+
+
+Here's exactly what to add and where for each page. Skip AnalyticsPage (already has them), LoginPage and SetPasswordPage (no standard header).
+1. AppointmentsPage.tsx (after line 73)
+Find:
+</header>
+Replace the entire header with:
+  <div className="row-actions">
+    <button type="button" className="ghost-btn" onClick={() => api.downloadExport("xlsx")}>
+      Export Excel
+    </button>
+    <button type="button" className="ghost-btn" onClick={() => api.downloadExport("pdf")}>
+      Export PDF
+    </button>
+  </div>
+</header>
+Make sure import { api } from "../api/client"; exists at the top.
+2. CheckInPage.tsx (after line 56)
+Same pattern — find </header> and add the row-actions div before it.
+3. CustomersPage.tsx (after line 121)
+Same pattern — find </header> and add the row-actions div before it.
+4. DashboardPage.tsx (lines 86-93)
+Uncomment the existing commented-out block. Remove {/* and */}:
+  <div className="row-actions">
+    <button type="button" className="ghost-btn" onClick={() => api.downloadExport("xlsx")}>
+      Export Excel
+    </button>
+    <button type="button" className="ghost-btn" onClick={() => api.downloadExport("pdf")}>
+      Export PDF
+    </button>
+  </div>
+5. LoyaltyPage.tsx (after line 189)
+Same pattern — find </header> and add the row-actions div before it.
+6. PromotionsPage.tsx (after line 183)
+Same pattern — find </header> and add the row-actions div before it.
+7. RewardsPage.tsx (after line 85)
+Same pattern — the header already has a <select> filter, add the row-actions div after it but before </header>.
+8. ServicesPage.tsx (after line 149)
+Same pattern — find </header> and add the row-actions div before it.
+9. StaffPage.tsx (after line 109)
+This one uses <div className="page-head"> instead of <header>. Add after the existing <button>:
+<div className="page-head">
+  <h1>STAFF MANAGEMENT</h1>
+  <button onClick={() => setShowCreateForm(true)}>
+    + ADD STAFF
+  </button>
+  <div className="row-actions">
+    <button type="button" className="ghost-btn" onClick={() => api.downloadExport("xlsx")}>
+      Export Excel
+    </button>
+    <button type="button" className="ghost-btn" onClick={() => api.downloadExport("pdf")}>
+      Export PDF
+    </button>
+  </div>
+</div>
+10. VisitsPage.tsx (after line 79)
+Same pattern — find </header> and add the row-actions div before it.
+The block to add everywhere is always the same:
+<div className="row-actions">
+  <button type="button" className="ghost-btn" onClick={() => api.downloadExport("xlsx")}>
+    Export Excel
+  </button>
+  <button type="button" className="ghost-btn" onClick={() => api.downloadExport("pdf")}>
+    Export PDF
+  </button>
+</div>
+And make sure each file has import { api } from "../api/client"; at the top.
+▣  Build · Big Pickle · 1m 14s
+Build·Big Pickle
+
+
+
+
+
+
+
+
+
+That screen is not a bug in your Mini App code. It’s ngrok saying the public tunnel is offline.
+
+Your .env has:
+
+TELEGRAM_MINI_APP_URL=https://unrefractive-branson-profoundly.ngrok-free.dev
+
+Telegram opens that HTTPS URL. ngrok replies: that tunnel is not running (ERR_NGROK_3200).
+
+Why Telegram needs ngrok (or similar)
+Telegram Mini Apps must use HTTPS on a public URL.
+Your Mini App runs locally as something like:
+
+http://localhost:5173
+
+Telegram cannot open localhost on your phone. So in development you use ngrok to create a temporary public HTTPS link that forwards to your PC’s port 5173.
+
+Phone (Telegram)
+   → https://….ngrok-free.dev   (public)
+   → ngrok tunnel
+   → http://localhost:5173      (your Mini App Vite server)
+If ngrok is stopped, the laptop is asleep, or the tunnel URL expired/changed → you get exactly that error page.
+
+What must be running for the Mini App
+Process	Why
+1. Mini App Vite (mini-app: npm run dev on 5173)
+Serves the React UI
+2. ngrok tunneling to 5173
+Gives Telegram a live HTTPS URL
+3. Backend API (FastAPI, usually 8000)
+Mini App calls /api/v1/mini-app/...
+4. Bot (optional for opening app, but needed for phone register / menu)
+Links customers
+Also:
+
+TELEGRAM_MINI_APP_URL in root .env must match the current ngrok URL
+BotFather / menu button Web App URL should match that same URL
+Restart the bot after changing TELEGRAM_MINI_APP_URL
+mini-app/.env VITE_API_BASE_URL — empty is OK if you proxy API through the same origin; if the Mini App calls localhost:8000 from the phone, that fails — API must be reachable from the phone too (often a second ngrok to 8000, or Vite proxy + same ngrok host)
+Your mini-app/.env has VITE_API_BASE_URL= empty, and Vite likely proxies /api — check mini-app/vite.config.ts. If it proxies /api → 8000, then one ngrok to 5173 is enough for both UI and API as long as FastAPI is running.
+
+Typical “why is this happening” causes
+You closed the ngrok terminal / stopped ngrok
+Free ngrok URL changed after restart (old URL in .env / BotFather)
+Mini App npm run dev is not running on 5173
+Laptop offline / different network
+Tunnel points at the wrong port
+Correct local setup (step by step)
+Start API:
+uvicorn app.main:app --reload --port 8000
+Start Mini App:
+cd mini-app → npm run dev (port 5173)
+Start ngrok:
+ngrok http 5173
+Copy the new https://….ngrok-free.dev URL
+Put that URL in root .env as TELEGRAM_MINI_APP_URL=...
+Update BotFather Mini App / menu button URL to the same link
+Restart the bot so it picks up the new env
+Open the Mini App again from Telegram
+Every time ngrok restarts and gives a new URL, repeat steps 4–6.
+
+Production later
+You won’t use ngrok forever. You’ll deploy Mini App + API to a real HTTPS host (Vercel/Railway/VPS) and set TELEGRAM_MINI_APP_URL to that stable domain.
+
+Bottom line: Telegram is opening your saved ngrok link, but that tunnel is offline. Start Mini App on 5173, start ngrok to 5173, update TELEGRAM_MINI_APP_URL (and BotFather) to the live URL, keep the API running.
+
+
+
+
+
+
+Correct local setup (step by step)
+Start API:
+uvicorn app.main:app --reload --port 8000
+Start Mini App:
+cd mini-app → npm run dev (port 5173)
+Start ngrok:
+ngrok http 5173
+Copy the new https://….ngrok-free.dev URL
+Put that URL in root .env as TELEGRAM_MINI_APP_URL=...
+Update BotFather Mini App / menu button URL to the same link
+Restart the bot so it picks up the new env
+Open the Mini App again from Telegram
+Every time ngrok restarts and gives a new URL, repeat steps 4–6.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ou already have ngrok installed. Use this:
+
+1. One-time auth (only if you never did it)
+Sign up / log in at https://dashboard.ngrok.com
+Copy your authtoken
+Run:
+ngrok config add-authtoken YOUR_TOKEN_HERE
+2. Start Mini App first (separate terminal)
+cd C:\Users\Danat\Desktop\Kings_Cut_Addis\mini-app
+npm run dev
+Leave that running on port 5173.
+
+3. Generate the public URL
+In a new terminal:
+
+ngrok http 5173
+You’ll see something like:
+
+Forwarding    https://abc123.ngrok-free.dev -> http://localhost:5173
+That https://….ngrok-free.dev line is your new URL. Copy it.
+
+4. Wire it up
+In root .env:
+TELEGRAM_MINI_APP_URL=https://YOUR-NEW-URL.ngrok-free.dev
+BotFather → Mini App / menu button → same URL
+Restart the bot
+Open the Mini App from Telegram again
+Every time you close ngrok or reboot, run ngrok http 5173 again, copy the new URL, update .env + BotFather, restart the bot.
+
+Keep the ngrok http 5173 window open while you use the Mini App — closing it kills the tunnel.
+
+
+
+
+
+
+
+
+
+
+
+Your ngrok agent is too old. Update it, then start the tunnel.
+
+1. Update ngrok
+winget upgrade Ngrok.Ngrok
+If that fails, try:
+
+ngrok update
+Then check the version (needs 3.20.0+):
+
+ngrok version
+2. Start Mini App (if not already running)
+cd C:\Users\Danat\Desktop\Kings_Cut_Addis\mini-app
+npm run dev
+3. Start ngrok (new terminal)
+ngrok http 5173
+Copy the https://….ngrok-free.dev URL from the Forwarding line, put it in .env as TELEGRAM_MINI_APP_URL, update BotFather, restart the bot.
+
+If winget upgrade / ngrok update both fail, download the latest Windows zip from https://ngrok.com/download, extract it, and run that ngrok.exe instead of the old one.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+still i am getting the same thing ee+ven if i did everything yiu said
+
+Feature exists — initData is still empty. Digging into how the Mini App loads Telegram auth and your current config.
+
+Likely cause: ngrok’s free interstitial strips Telegram’s #tgWebAppData=... hash, so initData is empty even inside Telegram. Confirming and switching you to a tunnel that doesn’t do that.
+
+The Mini App is working — Telegram auth data is being stripped (common with free ngrok). Improving the error screen so we can confirm, and giving you a tunnel that avoids that.
+
+This is not a missing feature. The Mini App loads, but Telegram’s login payload (initData) is empty — almost always because free ngrok’s warning page strips the #tgWebAppData=... hash.
+
+Fix: use Cloudflare Tunnel instead of ngrok
+1. Install cloudflared (PowerShell):
+
+winget install Cloudflare.cloudflared
+Close and reopen the terminal after install.
+
+2. Keep Mini App running:
+
+cd C:\Users\Danat\Desktop\Kings_Cut_Addis\mini-app
+npm run dev
+3. Start the tunnel (new terminal):
+
+cloudflared tunnel --url http://localhost:5173
+Copy the https://….trycloudflare.com URL it prints.
+
+4. Update root .env:
+
+TELEGRAM_MINI_APP_URL=https://YOUR-URL.trycloudflare.com
+5. BotFather → same URL for Mini App / menu button
+
+6. Restart the bot (so it picks up .env)
+
+7. In Telegram: /start → Open Kings Cut App (keyboard button)
+
+Stop using ngrok http 5173 for this Mini App while on the free plan — that interstitial is what’s breaking auth.
+
+After reopen, if it still fails, the new orange text will say whether the URL hash lost tgWebAppData (confirms the tunnel issue). Paste that message here if it still fails.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Option B: run it with the full path (this terminal is fine):
+& "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:5173
+Leave Mini App (npm run dev) running first. Copy the https://….trycloudflare.com URL, put it in .env as TELEGRAM_MINI_APP_URL, update BotFather, restart the bot, then open via Open Kings Cut App.
+
+cloudflared is installed at C:\Program Files (x86)\cloudflared\cloudflared.exe.
+
+In a new terminal (or with the full path), run:
+
+& "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:5173
+Then copy the https://….trycloudflare.com URL into .env + BotFather and restart the bot.
+
+i still get after all the cloudfair setup what is going on?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+What problem you’re solving
+Telegram Mini Apps cannot load http://localhost:5173 on your phone. Telegram needs a public HTTPS URL.
+
+So you run the Mini App locally, then put a tunnel in front of it:
+
+Phone (Telegram) → https://public-tunnel-url → your PC → localhost:5173
+The bot stores that public URL in .env as TELEGRAM_MINI_APP_URL, and buttons open that URL as a Web App (not a normal website link).
+
+Why Telegram login failed (the real bug)
+When Telegram opens a Mini App correctly, it attaches secret login data in the URL hash, like:
+
+https://your-tunnel-url/#tgWebAppData=...&tgWebAppVersion=...
+Your app reads that as initData and logs the customer in.
+
+If that hash is missing, you get:
+
+Telegram login data is missing (initData empty)
+
+So the page can still show “Kings Cut”, but you are not signed in.
+
+Why free ngrok failed
+Free ngrok often shows an interstitial warning page (“Visit Site”) before your app.
+
+What happens:
+
+Telegram opens:
+https://xxx.ngrok-free.dev/#tgWebAppData=...
+ngrok intercepts and shows its warning page (or a redirect)
+After that, the page loads without #tgWebAppData
+initData is empty → auth screen
+Also, every time you restart free ngrok, the URL changes, so you must update .env + BotFather + restart the bot again.
+
+Ngrok itself isn’t “bad”; the free warning page breaks Mini App auth.
+
+Why Cloudflare Tunnel works
+cloudflared tunnel --url http://localhost:5173 gives a temporary URL like:
+
+https://something.trycloudflare.com
+It usually:
+
+serves your app directly (no interstitial)
+keeps Telegram’s #tgWebAppData=... hash
+so initData works and login succeeds
+Same idea as ngrok (public HTTPS → localhost), but without the free-plan warning page that strips auth.
+
+Important: Web App button vs normal link
+How you open it	Result
+Inline/keyboard Web App button
+Telegram injects initData → login works
+Normal blue https://... link
+Opens like a website → no initData → fails
+Free ngrok interstitial
+Hash often lost → fails
+That’s why we changed the bot to send a real Open Kings Cut App Web App button, not a plain link.
+
+Entire local setup (do this every time you develop)
+You need 4 terminals (or 4 processes).
+
+Terminal 1 — API
+cd C:\Users\Danat\Desktop\Kings_Cut_Addis
+.\venv\Scripts\activate
+uvicorn app.main:app --reload --port 8000
+Leave it running.
+
+Terminal 2 — Mini App
+cd C:\Users\Danat\Desktop\Kings_Cut_Addis\mini-app
+npm run dev
+Leave it running on port 5173.
+
+Terminal 3 — Cloudflare Tunnel
+First time only (already done on your PC):
+
+winget install Cloudflare.cloudflared
+Then close and reopen PowerShell (PATH refresh), or use full path.
+
+Start tunnel:
+
+cloudflared tunnel --url http://localhost:5173
+If cloudflared is not found:
+
+& "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:5173
+Copy the printed HTTPS URL, example:
+
+https://features-mariah-cultural-difference.trycloudflare.com
+Leave this running. If you stop it, the Mini App URL dies.
+
+Terminal 4 — Telegram bot
+Put the Cloudflare URL in root .env (no spaces at the end):
+TELEGRAM_MINI_APP_URL=https://YOUR-URL.trycloudflare.com
+Start/restart the bot:
+cd C:\Users\Danat\Desktop\Kings_Cut_Addis
+.\venv\Scripts\activate
+python -m bot.main
+On startup it should log the Mini App URL and set the menu button to Web App mode.
+
+Telegram phone steps
+Open your Kings Cut bot
+Send /start
+Share phone if needed
+Tap the blue inline button “Open Kings Cut App”
+You should see QR / loyalty UI (not the orange auth error)
+Also set the same URL in BotFather Mini App / menu button when the tunnel URL changes.
+
+When the Cloudflare URL changes
+Quick tunnels get a new URL every time you restart cloudflared.
+
+Then repeat:
+
+Copy new https://….trycloudflare.com
+Update .env → TELEGRAM_MINI_APP_URL=...
+Update BotFather to the same URL
+Restart the bot
+Send /start again
+Open with the new button
+Order checklist (short)
+API :8000
+Mini App :5173
+Cloudflare tunnel → copy HTTPS URL
+.env + BotFather same URL
+Restart bot
+/start → tap Web App button
+What not to do
+Don’t use free ngrok for this Mini App (interstitial breaks auth)
+Don’t open the Mini App from a normal browser URL
+Don’t tap old blue text links from older bot messages
+Don’t forget to restart the bot after changing .env
+Don’t leave trailing spaces in TELEGRAM_MINI_APP_URL
+Mental model
+API (8000)  → backend / auth / loyalty data
+Mini App (5173) → UI on your PC
+Cloudflare → public HTTPS door into 5173
+Bot → tells Telegram which door to open as a Web App
+Telegram → attaches login hash → Mini App can sign you in
+Ngrok failed because the free door had a warning page that dropped the login hash. Cloudflare’s quick tunnel didn’t, so auth worked
+

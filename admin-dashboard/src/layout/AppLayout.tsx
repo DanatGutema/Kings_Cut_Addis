@@ -3,15 +3,15 @@ import { useAuth } from "../auth/AuthContext";
 
 const links = [
   { to: "/", label: "Dashboard", end: true },
-  { to: "/checkin", label: "Check-in" },
-  { to: "/customers", label: "Customers" },
   { to: "/appointments", label: "Appointments" },
+  { to: "/checkin", label: "Check-in" },
   { to: "/visits", label: "Visits" },
-  { to: "/services", label: "Services" },
-  { to: "/loyalty", label: "Loyalty" },
   { to: "/rewards", label: "Rewards" },
   { to: "/promotions", label: "Promotions" },
   { to: "/analytics", label: "Analytics" },
+  { to: "/customers", label: "Customers" },
+  { to: "/services", label: "Services" },
+  { to: "/loyalty", label: "Loyalty" },
   { to: "/staff", label: "Staff" },
 ];
 
@@ -23,7 +23,7 @@ export default function AppLayout() {
       <aside className="sidebar">
         <div className="brand-block">
           <p className="brand">Kings Cut</p>
-          <p className="brand-sub">Addis Admin</p>
+          <p className="brand-sub">Barber Shop</p>
         </div>
         <nav>
           {links
@@ -32,7 +32,7 @@ export default function AppLayout() {
                 (link.to !== "/staff" &&
                   link.to !== "/services" &&
                   link.to !== "/loyalty" &&
-                  link.to !== "/customers" &&
+                  // link.to !== "/customers" &&
                   link.to !== "/analytics" &&
                   link.to !== "/promotions") ||
                 staff?.role === "admin",

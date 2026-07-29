@@ -30,7 +30,6 @@ class CustomerOut(CustomerBase):
     qr_token: uuid.UUID
     total_visits: int
     total_spending: Decimal
-    loyalty_status: str
     joined_date: date
     last_visit_date: Optional[date] = None
     is_active: bool
@@ -47,7 +46,6 @@ class CustomerSummary(BaseModel):
     phone_number: str
     total_visits: int
     total_spending: Decimal
-    loyalty_status: str
     last_visit_date: Optional[date] = None
     is_active: bool
 

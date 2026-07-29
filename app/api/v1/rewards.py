@@ -140,6 +140,5 @@ def get_customer_loyalty_progress(
         customer_id=customer.id,
         total_visits=customer.total_visits,
         total_spending=customer.total_spending,
-        loyalty_status=customer.loyalty_status,
         rules=progress,
     )

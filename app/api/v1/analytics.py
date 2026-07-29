@@ -161,7 +161,7 @@ def export_xlsx(db: DbSession, _: CurrentStaff) -> StreamingResponse:
     wb = Workbook()
     ws = wb.active
     ws.title = "Customers"
-    ws.append(["ID", "First Name", "Last Name", "Phone", "Visits", "Spending", "Status"])
+    ws.append(["ID", "First Name", "Last Name", "Phone", "Visits", "Spending", "Active"])
     for c in db.scalars(select(Customer).order_by(Customer.created_at.desc())).all():
         ws.append(
             [
@@ -171,7 +171,7 @@ def export_xlsx(db: DbSession, _: CurrentStaff) -> StreamingResponse:
                 c.phone_number,
                 c.total_visits,
                 float(c.total_spending or 0),
-                c.loyalty_status,
+                "yes" if c.is_active else "no",
             ]
         )
 

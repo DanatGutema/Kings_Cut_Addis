@@ -36,6 +36,12 @@ class PromotionOut(PromotionBase):
     id: uuid.UUID
     created_by: uuid.UUID
     created_at: datetime
+    media_type: Optional[Literal["photo", "video"]] = None
+    media_filename: Optional[str] = None
+    media_url: Optional[str] = None
+    recipients_total: int = 0
+    telegram_sent: int = 0
+    telegram_failed: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -48,6 +54,8 @@ class PromotionRecipientOut(BaseModel):
     sms_sent: bool
     delivered: bool
     delivered_at: Optional[datetime] = None
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

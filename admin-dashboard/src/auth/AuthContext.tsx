@@ -7,12 +7,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, clearTokens, getAccessToken, setTokens, type Staff } from "../api/client";
+import { api, type Staff } from "../api/client";
 
 type AuthState = {
   staff: Staff | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
   logout: () => void;
 };
 
@@ -23,28 +23,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (!token) {
-      setLoading(false);
-      return;
-    }
+    // Clear legacy localStorage tokens from the old Bearer auth approach.
+    localStorage.removeItem("kca_access_token");
+    localStorage.removeItem("kca_refresh_token");
+
     api
       .me()
       .then(setStaff)
-      .catch(() => clearTokens())
+      .catch(() => setStaff(null))
       .finally(() => setLoading(false));
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const tokens = await api.login(email, password);
-    setTokens(tokens.access_token, tokens.refresh_token);
-    const me = await api.me();
+  const login = useCallback(async (identifier: string, password: string) => {
+    const me = await api.login(identifier, password);
     setStaff(me);
   }, []);
 
   const logout = useCallback(() => {
-    clearTokens();
-    setStaff(null);
+    void api.logout().finally(() => {
+      setStaff(null);
+    });
   }, []);
 
   const value = useMemo(

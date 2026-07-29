@@ -9,6 +9,7 @@ import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
 import LoyaltyPage from "./pages/LoyaltyPage";
 import PromotionsPage from "./pages/PromotionsPage";
+import RegisterPage from "./pages/RegisterPage";
 import RewardsPage from "./pages/RewardsPage";
 import ServicesPage from "./pages/ServicesPage";
 import VisitsPage from "./pages/VisitsPage";
@@ -28,6 +29,7 @@ export default function App() {
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
         <Route path="/set-password" element={<SetPasswordPage />} />
         <Route
           path="/"

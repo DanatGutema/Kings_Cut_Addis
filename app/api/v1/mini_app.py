@@ -9,6 +9,8 @@ from app.api.core.telegram_auth import validate_init_data
 from app.api.deps import CurrentCustomer, DbSession
 from app.api.services import appointments as appointment_service
 from app.api.services.loyalty_engine import get_rule_progress
+from app.api.services.media_storage import media_public_url
+from app.models.barber import Barber
 from app.models.customer import Customer
 from app.models.customer_session import CustomerSession
 from app.models.loyalty_rule import LoyaltyRule
@@ -17,6 +19,7 @@ from app.models.reward import Reward
 from app.models.service import Service
 from app.schemas.appointment import AppointmentCreate, AppointmentOut
 from app.schemas.auth import TelegramAuthRequest
+from app.schemas.barber import BarberOut
 from app.schemas.customer import CustomerOut
 from app.schemas.loyalty import LoyaltyProgressOut, RuleProgressOut
 from app.schemas.promotion import PromotionOut
@@ -101,7 +104,6 @@ def mini_app_loyalty(customer: CurrentCustomer, db: DbSession) -> LoyaltyProgres
         customer_id=customer.id,
         total_visits=customer.total_visits,
         total_spending=customer.total_spending,
-        loyalty_status=customer.loyalty_status,
         rules=progress,
     )
 
@@ -118,9 +120,9 @@ def mini_app_rewards(customer: CurrentCustomer, db: DbSession) -> list[Reward]:
 
 
 @router.get("/promotions", response_model=list[PromotionOut])
-def mini_app_promotions(db: DbSession, customer: CurrentCustomer) -> list[Promotion]:
+def mini_app_promotions(db: DbSession, customer: CurrentCustomer) -> list[PromotionOut]:
     today = date.today()
-    return list(
+    items = list(
         db.scalars(
             select(Promotion)
             .where(
@@ -133,6 +135,12 @@ def mini_app_promotions(db: DbSession, customer: CurrentCustomer) -> list[Promot
             .order_by(Promotion.start_date.desc())
         ).all()
     )
+    return [
+        PromotionOut.model_validate(p).model_copy(
+            update={"media_url": media_public_url(p.media_filename)}
+        )
+        for p in items
+    ]
 
 
 @router.get("/services", response_model=list[ServiceOut])
@@ -142,6 +150,20 @@ def mini_app_services(db: DbSession, _: CurrentCustomer) -> list[Service]:
             select(Service)
             .where(Service.is_active.is_(True))
             .order_by(Service.name)
+        ).all()
+    )
+
+
+@router.get("/barbers", response_model=list[BarberOut])
+def mini_app_list_barbers(
+    db: DbSession,
+    _: CurrentCustomer,
+) -> list[BarberOut]:
+    return list(
+        db.scalars(
+            select(Barber)
+            .where(Barber.is_active.is_(True))
+            .order_by(Barber.first_name.asc(), Barber.last_name.asc())
         ).all()
     )
 

@@ -12,6 +12,39 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useNavigate } from "react-router-dom";
 
+
+
+
+function getGreeting(firstName: string): string {
+  const now = new Date();
+  const hour = parseInt(
+    new Intl.DateTimeFormat("en-GB", {
+      hour: "numeric",
+      hour12: false,
+      timeZone: "Africa/Addis_Ababa",
+    }).format(now),
+    10,
+  );
+
+  let timeGreeting: string;
+  let message: string;
+
+  if (hour >= 5 && hour < 12) {
+    timeGreeting = "Good morning";
+    message = "Let's make today a great day!";
+  } else if (hour >= 12 && hour < 17) {
+    timeGreeting = "Good afternoon";
+    message = "You're doing an amazing job!";
+  } else if (hour >= 17 && hour < 21) {
+    timeGreeting = "Good evening";
+    message =  "The day's almost done. Great work today!";
+  } else {
+    timeGreeting = "Good night  "; 
+    message = "Night shift hero rest well after!";
+  }
+
+  return `${timeGreeting}, ${firstName}! ${message}`;
+}
 export default function DashboardPage() {
   const [metrics, setMetrics] = useState<{
     total_customers: number;
@@ -48,16 +81,16 @@ export default function DashboardPage() {
       <header className="page-head">
         <div>
           <h1>Dashboard</h1>
-          <p className="muted">Today’s pulse for the shop floor</p>
+          <p className="muted">{staff?.first_name ? getGreeting(staff.first_name):""}</p>
         </div>
-        <div className="row-actions">
+        {/* <div className="row-actions">
           <button type="button" className="ghost-btn" onClick={() => api.downloadExport("xlsx")}>
             Export Excel
           </button>
           <button type="button" className="ghost-btn" onClick={() => api.downloadExport("pdf")}>
             Export PDF
           </button>
-        </div>
+        </div> */}
       </header>
 
       <div className="metric-grid">

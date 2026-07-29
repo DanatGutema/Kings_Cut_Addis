@@ -9,6 +9,7 @@
     "preview": "vite preview --port 5174 --host"
   },
   "dependencies": {
+    "html5-qrcode": "^2.3.8",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.0",

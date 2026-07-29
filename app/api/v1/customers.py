@@ -27,7 +27,6 @@ def list_customers(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     search: str | None = Query(None, description="Search by name or phone"),
-    loyalty_status: str | None = Query(None),
     is_active: bool | None = Query(None),
 ) -> PaginatedResponse[CustomerSummary]:
     query = select(Customer)
@@ -42,8 +41,6 @@ def list_customers(
                 Customer.phone_number.ilike(term),
             )
         )
-    if loyalty_status is not None:
-        filters.append(Customer.loyalty_status == loyalty_status)
     if is_active is not None:
         filters.append(Customer.is_active == is_active)
 

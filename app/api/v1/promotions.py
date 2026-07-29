@@ -1,11 +1,21 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import and_, func, select
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import AdminStaff, CurrentStaff, DbSession
-from app.api.services.promotion_broadcast import broadcast_promotion, get_promotion
+from app.api.services.media_storage import (
+    delete_media_file,
+    media_public_url,
+    save_promotion_media,
+)
+from app.api.services.promotion_broadcast import (
+    broadcast_promotion,
+    get_promotion,
+    retry_promotion_recipient,
+)
 from app.models.promotion import Promotion
 from app.models.promotion_recipient import PromotionRecipient
 from app.schemas.pagination import PaginatedResponse
@@ -19,6 +29,59 @@ from app.schemas.promotion import (
 )
 
 router = APIRouter(prefix="/promotions", tags=["promotions"])
+
+
+def _delivery_counts(db: DbSession, promotion_id: UUID) -> tuple[int, int, int]:
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(PromotionRecipient)
+            .where(PromotionRecipient.promotion_id == promotion_id)
+        )
+        or 0
+    )
+    sent = (
+        db.scalar(
+            select(func.count())
+            .select_from(PromotionRecipient)
+            .where(
+                PromotionRecipient.promotion_id == promotion_id,
+                PromotionRecipient.telegram_sent.is_(True),
+            )
+        )
+        or 0
+    )
+    failed = max(total - sent, 0)
+    return total, sent, failed
+
+
+def _promotion_out(db: DbSession, promotion: Promotion) -> PromotionOut:
+    total, sent, failed = _delivery_counts(db, promotion.id)
+    data = PromotionOut.model_validate(promotion)
+    return data.model_copy(
+        update={
+            "recipients_total": total,
+            "telegram_sent": sent,
+            "telegram_failed": failed,
+            "media_url": media_public_url(promotion.media_filename),
+        }
+    )
+
+
+def _recipient_out(recipient: PromotionRecipient) -> PromotionRecipientOut:
+    customer = recipient.customer
+    name = None
+    phone = None
+    if customer is not None:
+        name = f"{customer.first_name} {customer.last_name or ''}".strip()
+        phone = customer.phone_number
+    data = PromotionRecipientOut.model_validate(recipient)
+    return data.model_copy(
+        update={
+            "customer_name": name,
+            "customer_phone": phone,
+        }
+    )
 
 
 @router.get("", response_model=PaginatedResponse[PromotionOut])
@@ -52,7 +115,7 @@ def list_promotions(
     ).all()
 
     return PaginatedResponse(
-        items=[PromotionOut.model_validate(p) for p in items],
+        items=[_promotion_out(db, p) for p in items],
         total=total,
         skip=skip,
         limit=limit,
@@ -64,7 +127,7 @@ def create_promotion(
     body: PromotionCreate,
     db: DbSession,
     current_staff: AdminStaff,
-) -> Promotion:
+) -> PromotionOut:
     if body.end_date < body.start_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -75,7 +138,7 @@ def create_promotion(
     db.add(promotion)
     db.commit()
     db.refresh(promotion)
-    return promotion
+    return _promotion_out(db, promotion)
 
 
 @router.get("/{promotion_id}", response_model=PromotionOut)
@@ -83,8 +146,8 @@ def get_promotion_endpoint(
     promotion_id: UUID,
     db: DbSession,
     _: CurrentStaff,
-) -> Promotion:
-    return get_promotion(db, promotion_id)
+) -> PromotionOut:
+    return _promotion_out(db, get_promotion(db, promotion_id))
 
 
 @router.patch("/{promotion_id}", response_model=PromotionOut)
@@ -93,7 +156,7 @@ def update_promotion(
     body: PromotionUpdate,
     db: DbSession,
     _: AdminStaff,
-) -> Promotion:
+) -> PromotionOut:
     promotion = get_promotion(db, promotion_id)
     updates = body.model_dump(exclude_unset=True)
 
@@ -110,7 +173,7 @@ def update_promotion(
 
     db.commit()
     db.refresh(promotion)
-    return promotion
+    return _promotion_out(db, promotion)
 
 
 @router.post("/{promotion_id}/deactivate", response_model=PromotionOut)
@@ -118,12 +181,12 @@ def deactivate_promotion(
     promotion_id: UUID,
     db: DbSession,
     _: AdminStaff,
-) -> Promotion:
+) -> PromotionOut:
     promotion = get_promotion(db, promotion_id)
     promotion.is_active = False
     db.commit()
     db.refresh(promotion)
-    return promotion
+    return _promotion_out(db, promotion)
 
 
 @router.post("/{promotion_id}/activate", response_model=PromotionOut)
@@ -131,12 +194,44 @@ def activate_promotion(
     promotion_id: UUID,
     db: DbSession,
     _: AdminStaff,
-) -> Promotion:
+) -> PromotionOut:
     promotion = get_promotion(db, promotion_id)
     promotion.is_active = True
     db.commit()
     db.refresh(promotion)
-    return promotion
+    return _promotion_out(db, promotion)
+
+
+@router.post("/{promotion_id}/media", response_model=PromotionOut)
+async def upload_promotion_media(
+    promotion_id: UUID,
+    db: DbSession,
+    _: AdminStaff,
+    file: UploadFile = File(...),
+) -> PromotionOut:
+    promotion = get_promotion(db, promotion_id)
+    media_type, filename = await save_promotion_media(file)
+    delete_media_file(promotion.media_filename)
+    promotion.media_type = media_type
+    promotion.media_filename = filename
+    db.commit()
+    db.refresh(promotion)
+    return _promotion_out(db, promotion)
+
+
+@router.delete("/{promotion_id}/media", response_model=PromotionOut)
+def delete_promotion_media(
+    promotion_id: UUID,
+    db: DbSession,
+    _: AdminStaff,
+) -> PromotionOut:
+    promotion = get_promotion(db, promotion_id)
+    delete_media_file(promotion.media_filename)
+    promotion.media_type = None
+    promotion.media_filename = None
+    db.commit()
+    db.refresh(promotion)
+    return _promotion_out(db, promotion)
 
 
 @router.delete("/{promotion_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -167,6 +262,7 @@ def delete_promotion(
             ),
         )
 
+    delete_media_file(promotion.media_filename)
     db.delete(promotion)
     db.commit()
     return None
@@ -180,6 +276,20 @@ async def broadcast_promotion_endpoint(
     _: AdminStaff,
 ) -> PromotionBroadcastResult:
     return await broadcast_promotion(db, promotion_id, body)
+
+
+@router.post(
+    "/{promotion_id}/recipients/{recipient_id}/retry",
+    response_model=PromotionRecipientOut,
+)
+async def retry_promotion_recipient_endpoint(
+    promotion_id: UUID,
+    recipient_id: UUID,
+    db: DbSession,
+    _: AdminStaff,
+) -> PromotionRecipientOut:
+    recipient = await retry_promotion_recipient(db, promotion_id, recipient_id)
+    return _recipient_out(recipient)
 
 
 @router.get(
@@ -205,6 +315,7 @@ def list_promotion_recipients(
     )
     recipients = db.scalars(
         select(PromotionRecipient)
+        .options(selectinload(PromotionRecipient.customer))
         .where(PromotionRecipient.promotion_id == promotion_id)
         .order_by(PromotionRecipient.id.desc())
         .offset(skip)
@@ -212,7 +323,7 @@ def list_promotion_recipients(
     ).all()
 
     return PaginatedResponse(
-        items=[PromotionRecipientOut.model_validate(r) for r in recipients],
+        items=[_recipient_out(r) for r in recipients],
         total=total,
         skip=skip,
         limit=limit,

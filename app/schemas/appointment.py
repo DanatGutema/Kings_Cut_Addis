@@ -11,6 +11,17 @@ AppointmentStatus = Literal["pending", "accepted", "rejected", "completed"]
 class AppointmentCreate(BaseModel):
     service_id: uuid.UUID
     scheduled_at: datetime
+    preferred_barber_id: Optional[uuid.UUID] = None
+    notes: Optional[str] = Field(None, max_length=1000)
+
+
+class StaffAppointmentCreate(BaseModel):
+    """Staff-logged appointment (e.g. phone booking)."""
+
+    customer_id: uuid.UUID
+    service_id: uuid.UUID
+    scheduled_at: datetime
+    preferred_barber_id: Optional[uuid.UUID] = None
     notes: Optional[str] = Field(None, max_length=1000)
 
 
@@ -21,6 +32,7 @@ class AppointmentOut(BaseModel):
     scheduled_at: datetime
     notes: Optional[str] = None
     status: AppointmentStatus
+    preferred_barber_id: Optional[uuid.UUID] = None
     handled_by_staff_id: Optional[uuid.UUID] = None
     visit_id: Optional[uuid.UUID] = None
     responded_at: Optional[datetime] = None
@@ -31,5 +43,6 @@ class AppointmentOut(BaseModel):
     customer_phone: Optional[str] = None
     service_name: Optional[str] = None
     service_price: Optional[Decimal] = None
+    preferred_barber_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

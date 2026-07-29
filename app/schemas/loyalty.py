@@ -26,5 +26,4 @@ class LoyaltyProgressOut(BaseModel):
     customer_id: uuid.UUID
     total_visits: int
     total_spending: Decimal
-    loyalty_status: str
     rules: list[RuleProgressOut]

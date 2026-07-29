@@ -40,12 +40,21 @@ class TokenResponse(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str
+    refresh_token: Optional[str] = None
 
 
 class StaffLogin(BaseModel):
-    email: str
+    """Login with email or phone number."""
+
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
     password: str
+
+    def identifier(self) -> str:
+        value = (self.email or self.phone_number or "").strip()
+        if not value:
+            raise ValueError("email or phone_number is required")
+        return value
 
 
 class TelegramAuthRequest(BaseModel):
