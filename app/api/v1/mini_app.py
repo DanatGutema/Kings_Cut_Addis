@@ -10,6 +10,7 @@ from app.api.deps import CurrentCustomer, DbSession
 from app.api.services import appointments as appointment_service
 from app.api.services.loyalty_engine import get_rule_progress
 from app.api.services.media_storage import media_public_url
+from app.api.services.rewards import expire_stale_rewards
 from app.models.barber import Barber
 from app.models.customer import Customer
 from app.models.customer_session import CustomerSession
@@ -110,6 +111,7 @@ def mini_app_loyalty(customer: CurrentCustomer, db: DbSession) -> LoyaltyProgres
 
 @router.get("/rewards", response_model=list[RewardOut])
 def mini_app_rewards(customer: CurrentCustomer, db: DbSession) -> list[Reward]:
+    expire_stale_rewards(db)
     return list(
         db.scalars(
             select(Reward)

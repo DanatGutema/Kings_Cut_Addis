@@ -10,6 +10,7 @@ from reportlab.pdfgen import canvas
 from sqlalchemy import func, select
 
 from app.api.deps import CurrentStaff, DbSession
+from app.api.services.rewards import expire_stale_rewards
 from app.models.customer import Customer
 from app.models.reward import Reward
 from app.models.service import Service
@@ -21,6 +22,7 @@ from app.schemas.analytics import (
     RevenueByService,
     TopCustomer,
     VisitTrendPoint,
+    VisitTrendResponse,
 )
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -66,29 +68,106 @@ def dashboard_metrics(db: DbSession, _: CurrentStaff) -> DashboardMetrics:
     )
 
 
-@router.get("/visits/trend", response_model=list[VisitTrendPoint])
+@router.get("/visits/trend", response_model=VisitTrendResponse)
 def visit_trend(
     db: DbSession,
     _: CurrentStaff,
-    days: int = Query(30, ge=7, le=365),
-) -> list[VisitTrendPoint]:
-    start = _day_start(date.today() - timedelta(days=days - 1))
-    rows = db.execute(
-        select(
-            func.date(Visit.visit_date).label("period"),
-            func.count().label("visit_count"),
-        )
-        .where(Visit.visit_date >= start)
-        .group_by(func.date(Visit.visit_date))
-        .order_by(func.date(Visit.visit_date))
-    ).all()
+    granularity: str = Query("daily", pattern="^(daily|weekly|monthly|yearly)$"),
+) -> VisitTrendResponse:
+    today = date.today()
 
-    by_day = {row.period: row.visit_count for row in rows}
-    points: list[VisitTrendPoint] = []
-    for i in range(days):
-        d = date.today() - timedelta(days=days - 1 - i)
-        points.append(VisitTrendPoint(period=d, visit_count=int(by_day.get(d, 0))))
-    return points
+    if granularity == "daily":
+        bucket_count = 30
+        start = _day_start(today - timedelta(days=bucket_count - 1))
+        trunc = func.date(Visit.visit_date)
+        rows = db.execute(
+            select(trunc.label("bucket"), func.count().label("visit_count"))
+            .where(Visit.visit_date >= start)
+            .group_by(trunc)
+            .order_by(trunc)
+        ).all()
+        by_bucket = {str(row.bucket): int(row.visit_count) for row in rows}
+        points: list[VisitTrendPoint] = []
+        for i in range(bucket_count):
+            d = today - timedelta(days=bucket_count - 1 - i)
+            key = d.isoformat()
+            points.append(VisitTrendPoint(period=key, visit_count=by_bucket.get(key, 0)))
+
+    elif granularity == "weekly":
+        bucket_count = 12
+        # Align to Monday of current week, then go back
+        this_monday = today - timedelta(days=today.weekday())
+        start_monday = this_monday - timedelta(weeks=bucket_count - 1)
+        start = _day_start(start_monday)
+        trunc = func.date_trunc("week", Visit.visit_date)
+        rows = db.execute(
+            select(trunc.label("bucket"), func.count().label("visit_count"))
+            .where(Visit.visit_date >= start)
+            .group_by(trunc)
+            .order_by(trunc)
+        ).all()
+        by_bucket: dict[str, int] = {}
+        for row in rows:
+            bucket_date = row.bucket.date() if hasattr(row.bucket, "date") else row.bucket
+            by_bucket[bucket_date.isoformat()] = int(row.visit_count)
+        points = []
+        for i in range(bucket_count):
+            week_start = start_monday + timedelta(weeks=i)
+            key = week_start.isoformat()
+            points.append(VisitTrendPoint(period=key, visit_count=by_bucket.get(key, 0)))
+
+    elif granularity == "monthly":
+        bucket_count = 12
+        year, month = today.year, today.month
+        # Build list of (year, month) going back
+        months: list[tuple[int, int]] = []
+        y, m = year, month
+        for _ in range(bucket_count):
+            months.append((y, m))
+            m -= 1
+            if m == 0:
+                m = 12
+                y -= 1
+        months.reverse()
+        start = _day_start(date(months[0][0], months[0][1], 1))
+        trunc = func.date_trunc("month", Visit.visit_date)
+        rows = db.execute(
+            select(trunc.label("bucket"), func.count().label("visit_count"))
+            .where(Visit.visit_date >= start)
+            .group_by(trunc)
+            .order_by(trunc)
+        ).all()
+        by_bucket = {}
+        for row in rows:
+            bucket_date = row.bucket.date() if hasattr(row.bucket, "date") else row.bucket
+            by_bucket[f"{bucket_date.year:04d}-{bucket_date.month:02d}"] = int(row.visit_count)
+        points = []
+        for y, m in months:
+            key = f"{y:04d}-{m:02d}"
+            points.append(VisitTrendPoint(period=key, visit_count=by_bucket.get(key, 0)))
+
+    else:  # yearly
+        bucket_count = 5
+        start_year = today.year - (bucket_count - 1)
+        start = _day_start(date(start_year, 1, 1))
+        trunc = func.date_trunc("year", Visit.visit_date)
+        rows = db.execute(
+            select(trunc.label("bucket"), func.count().label("visit_count"))
+            .where(Visit.visit_date >= start)
+            .group_by(trunc)
+            .order_by(trunc)
+        ).all()
+        by_bucket = {}
+        for row in rows:
+            bucket_date = row.bucket.date() if hasattr(row.bucket, "date") else row.bucket
+            by_bucket[str(bucket_date.year)] = int(row.visit_count)
+        points = []
+        for y in range(start_year, today.year + 1):
+            key = str(y)
+            points.append(VisitTrendPoint(period=key, visit_count=by_bucket.get(key, 0)))
+
+    total = sum(p.visit_count for p in points)
+    return VisitTrendResponse(granularity=granularity, total_visits=total, points=points)
 
 
 @router.get("/revenue/by-service", response_model=list[RevenueByService])
@@ -136,6 +215,7 @@ def top_customers(
 
 @router.get("/loyalty", response_model=LoyaltyMetrics)
 def loyalty_metrics(db: DbSession, _: CurrentStaff) -> LoyaltyMetrics:
+    expire_stale_rewards(db)
     earned = db.scalar(select(func.count()).select_from(Reward)) or 0
     redeemed = (
         db.scalar(select(func.count()).select_from(Reward).where(Reward.status == "redeemed"))

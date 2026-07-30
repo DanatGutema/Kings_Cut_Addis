@@ -1,4 +1,3 @@
-from datetime import date
 from decimal import Decimal
 
 from pydantic import BaseModel
@@ -14,8 +13,14 @@ class DashboardMetrics(BaseModel):
 
 
 class VisitTrendPoint(BaseModel):
-    period: date
+    period: str
     visit_count: int
+
+
+class VisitTrendResponse(BaseModel):
+    granularity: str
+    total_visits: int
+    points: list[VisitTrendPoint]
 
 
 class RevenueByService(BaseModel):

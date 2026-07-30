@@ -60,13 +60,13 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.dashboard(), api.visitTrend(14)])
+    Promise.all([api.dashboard(), api.visitTrend("daily")])
       .then(([m, t]) => {
         setMetrics(m);
         setTrend(
-          t.map((p) => ({
-            ...p,
+          t.points.slice(-14).map((p) => ({
             period: p.period.slice(5),
+            visit_count: p.visit_count,
           })),
         );
       })
@@ -186,17 +186,18 @@ export default function DashboardPage() {
         <div className="chart-wrap">
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={trend}>
-              <CartesianGrid stroke="rgba(232,201,138,0.12)" vertical={false} />
-              <XAxis dataKey="period" stroke="#b9a894" fontSize={12} />
-              <YAxis allowDecimals={false} stroke="#b9a894" fontSize={12} />
+              <CartesianGrid stroke="rgba(201,168,76,0.18)" vertical={false} />
+              <XAxis dataKey="period" stroke="#666666" fontSize={12} />
+              <YAxis allowDecimals={false} stroke="#666666" fontSize={12} />
               <Tooltip
                 contentStyle={{
-                  background: "#2b1d14",
-                  border: "1px solid rgba(232,201,138,0.25)",
+                  background: "#ffffff",
+                  border: "1px solid rgba(201,168,76,0.35)",
                   borderRadius: 8,
+                  color: "#1a1a1a",
                 }}
               />
-              <Bar dataKey="visit_count" fill="#c4a574" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="visit_count" fill="#C9A84C" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

@@ -132,6 +132,9 @@ def _reward_counts(customer_id) -> tuple[int, int]:
     """Returns (pending_or_active, total)."""
     db = SessionLocal()
     try:
+        from app.api.services.rewards import expire_stale_rewards
+
+        expire_stale_rewards(db)
         pending = (
             db.scalar(
                 select(func.count())

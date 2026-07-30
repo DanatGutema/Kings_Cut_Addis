@@ -107,7 +107,7 @@ export default function VisitsPage() {
           </p>
         </div>
       </header>
-{/* 
+
       <form className="panel form-grid" onSubmit={onCreate}>
         <h2>Log visit</h2>
         <label>
@@ -139,7 +139,7 @@ export default function VisitsPage() {
           <input value={notes} onChange={(e) => setNotes(e.target.value)} />
         </label>
         <button type="submit">Save visit</button>
-      </form> */}
+      </form>
 
       {error && <p className="error-text">{error}</p>}
 

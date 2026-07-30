@@ -31,6 +31,9 @@ def list_rewards(
     status_filter: str | None = None,
     loyalty_rule_id: UUID | None = None,
 ) -> tuple[list[Reward], int]:
+    # Flip past-due pending rewards to expired before any list/filter
+    expire_stale_rewards(db)
+
     filters = []
     if customer_id is not None:
         filters.append(Reward.customer_id == customer_id)

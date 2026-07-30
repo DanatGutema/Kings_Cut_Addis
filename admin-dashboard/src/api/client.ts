@@ -151,10 +151,12 @@ export const api = {
       revenue_this_month: number;
     }>("/api/v1/analytics/dashboard");
   },
-  visitTrend(days = 30) {
-    return request<{ period: string; visit_count: number }[]>(
-      `/api/v1/analytics/visits/trend?days=${days}`,
-    );
+  visitTrend(granularity: "daily" | "weekly" | "monthly" | "yearly" = "daily") {
+    return request<{
+      granularity: string;
+      total_visits: number;
+      points: { period: string; visit_count: number }[];
+    }>(`/api/v1/analytics/visits/trend?granularity=${granularity}`);
   },
   revenueByService() {
     return request<{ service_name: string; total_revenue: number; visit_count: number }[]>(
